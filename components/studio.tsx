@@ -634,8 +634,9 @@ export default function Studio() {
                 Sketch reference
               </h2>
               <p className="subtle">
-                Keep your sketch beside the preview and adjust the template
-                below to match it.
+                Upload a sketch as a reference, then use the controls below to
+                recreate its shape. This does not automatically create a 3D
+                garment.
               </p>
               {design.reference && (
                 <>

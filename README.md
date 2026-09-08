@@ -10,6 +10,7 @@ A working 3D fitting-studio prototype: enter body measurements, customise a garm
 - **Independent clothing dimensions:** garment chest, waist, hips, shoulder width, length, sleeve length, inseam and rise are stored separately from the body. Moving body sliders changes placement and draping, not the garment rest dimensions.
 - **Guided costume editor:** crew/scoop/V necklines; straight, tapered or flared hems/legs; straight or bell sleeves; centimetre-based dimensions and three illustrative size presets.
 - **Measurement comparison:** body and garment values shown side by side with signed differences in centimetres.
+- **Connected shoulders and collision-aware neckline:** upper garments use a single connected surface; sleeve roots share bodice vertices and neckline anchors are projected outside the collision envelope before rendering. Garment rest dimensions remain unchanged.
 - **Refined mannequin and detailing:** continuous limb surfaces, a tapered jaw, ears, and garment neckline/cuff/side-seam guides that follow the cloth.
 - **Basic cloth relaxation:** positional constraints, gravity, body collision and illustrative cotton/denim/silk presets.
 - **Design uploads:** repeat PNG/JPEG/WebP artwork across the garment, or keep a costume sketch alongside it as a reference.
@@ -31,7 +32,7 @@ This is a visual prototype, not a body-scanning or certified garment-fit system.
 - Fabric labels select illustrative stiffness and shading presets; they do not represent measured material properties.
 - A print upload changes the surface artwork. A sketch upload is a manual design reference; **no automatic sketch-to-pattern or image-to-3D conversion is implemented**.
 - Camera measurement, arbitrary sewing-pattern import, learned body reconstruction and physically validated fit prediction are future stages.
-- Garment settings support the provided templates; this is not a sewing-pattern editor. Sleeve joins and seam lines are geometric approximations, not stitched pattern topology.
+- Garment settings support the provided templates; this is not a sewing-pattern editor. T-shirt and dress sleeves share mesh vertices with their armholes, preventing disconnected shoulder seams. This is procedural connected geometry, not sewing-pattern reconstruction. Seam lines are visual guides.
 - First-version saved looks are upgraded on read using their original saved measurements and settings. New looks store explicit garment dimensions. Existing database rows and migrations are not rewritten.
 
 ## Stack and architecture
@@ -91,7 +92,7 @@ npm run test:core
 npm test
 ```
 
-`npm test` builds the Worker, then checks the rendered workspace and API behaviour using in-memory SQLite and an R2 test double. Tests cover validation, independent garment dimensions across body changes, style geometry, legacy look migration, bounded cloth output across body/garment extremes, ownership isolation, save/load/delete and image format checks. They do not measure body-estimation accuracy or real-world garment fit. Browser visual testing is not part of this suite.
+`npm test` builds the Worker, then checks the rendered workspace and API behaviour using in-memory SQLite and an R2 test double. Tests cover validation, independent garment dimensions across body changes, connected manifold sleeve topology, collision-cleared neckline anchors, style geometry, legacy look migration, bounded cloth output across body/garment extremes, ownership isolation, save/load/delete and image format checks. They do not measure body-estimation accuracy or real-world garment fit. Browser visual testing is not part of this suite.
 
 ## API
 

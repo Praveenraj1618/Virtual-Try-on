@@ -1,5 +1,6 @@
 import * as T from "three";
 import { Cloth, type Vec3 } from "./cloth";
+import { connectedUpperGarment } from "./upper-garment";
 import { canDrapeGarment, type Measurements, type Design } from "./schema";
 type Ring = { y: number; a: number; b: number };
 type Capsule = { start: T.Vector3; end: T.Vector3; r1: number; r2: number };
@@ -304,9 +305,23 @@ export function createMannequin(m: Measurements, d: Design) {
     transparent: true,
     opacity: 0.7,
   });
-  const part = (pts: number[], cols: number, rows: number, neck = false) => {
-    const cloth = new Cloth(pts, cols, rows, stiffness),
-      mesh = new T.Mesh(geometry(pts, cols, rows), material);
+  const part = (
+    pts: number[],
+    cols: number,
+    rows: number,
+    neck = false,
+    topology?: ReturnType<typeof connectedUpperGarment>,
+  ) => {
+    const cloth = new Cloth(pts, cols, rows, stiffness, topology);
+    let geo: T.BufferGeometry;
+    if (topology) {
+      geo = new T.BufferGeometry();
+      geo.setAttribute("position", new T.Float32BufferAttribute(pts, 3));
+      geo.setAttribute("uv", new T.Float32BufferAttribute(topology.uv, 2));
+      geo.setIndex(topology.indices);
+      geo.computeVertexNormals();
+    } else geo = geometry(pts, cols, rows);
+    const mesh = new T.Mesh(geo, material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     garments.add(mesh);
@@ -327,21 +342,24 @@ export function createMannequin(m: Measurements, d: Design) {
       garments.add(line);
       trims.push({ line, vertices });
     };
-    trim(
-      Array.from({ length: cols }, (_, c) => c),
-      true,
-    );
-    trim(
-      Array.from({ length: cols }, (_, c) => (rows - 1) * cols + c),
-      true,
-    );
-    // Side-seam guides remain attached to the deformed cloth vertices.
-    if (neck)
-      for (const column of [Math.floor(cols / 4), Math.floor((cols * 3) / 4)])
-        trim(
-          Array.from({ length: rows }, (_, r) => r * cols + column),
-          false,
-        );
+    if (topology) {
+      for (const loop of topology.loops) trim(loop, true);
+    } else {
+      trim(
+        Array.from({ length: cols }, (_, c) => c),
+        true,
+      );
+      trim(
+        Array.from({ length: cols }, (_, c) => (rows - 1) * cols + c),
+        true,
+      );
+      if (neck)
+        for (const column of [Math.floor(cols / 4), Math.floor((cols * 3) / 4)])
+          trim(
+            Array.from({ length: rows }, (_, r) => r * cols + column),
+            false,
+          );
+    }
     parts.push({ mesh, cloth, trims });
   };
   if (d.kind !== "trousers") {
@@ -391,30 +409,8 @@ export function createMannequin(m: Measurements, d: Design) {
           points[i + 2] = Math.max(points[i + 2], section.b * front);
         }
       }
-    part(points, 64, 48, true);
-    if (g.sleeveLength > 0)
-      for (const side of [-1, 1]) {
-        const start = new T.Vector3(
-            side * (gShoulder - 0.01),
-            anchor - 0.045,
-            0,
-          ),
-          end = start
-            .clone()
-            .add(
-              new T.Vector3(side * 0.29, -0.957, 0).multiplyScalar(
-                g.sleeveLength / 100,
-              ),
-            );
-        const upperRadius = Math.max(0.06, Math.min(0.13, gChest * 0.38)),
-          cuff =
-            d.sleeveStyle === "bell" ? upperRadius * 1.6 : upperRadius * 0.78;
-        part(
-          segmentPoints(start, end, upperRadius, cuff, 22, 40, 0.001),
-          40,
-          22,
-        );
-      }
+    const topology = connectedUpperGarment(points, 64, 48, anchor, d, gChest);
+    part(topology.points, 64, 48, true, topology);
   } else {
     const crotchY = anchor - g.rise / 100,
       legX = gHip * 0.5,
@@ -481,7 +477,7 @@ export function createMannequin(m: Measurements, d: Design) {
         dy = y - cy,
         dz = z - cz,
         len = Math.hypot(dx, dy, dz),
-        r = T.MathUtils.lerp(s.r1, s.r2, t) + 0.004;
+        r = T.MathUtils.lerp(s.r1, s.r2, t) + 0.012;
       if (len < r && len > 1e-7) {
         x = cx + (dx * r) / len;
         y = cy + (dy * r) / len;
@@ -490,12 +486,35 @@ export function createMannequin(m: Measurements, d: Design) {
     }
     return [x, y, z];
   };
+  const canDrape = canDrapeGarment(m, d);
+  if (canDrape)
+    for (const part of parts) {
+      part.cloth.fitAnchors(collide);
+      // Resolve initial intersections for every vertex before the first displayed frame.
+      for (let i = 0; i < part.cloth.count; i++)
+        if (!part.cloth.pinned.has(i)) {
+          let p: Vec3 = [
+            part.cloth.positions[i * 3],
+            part.cloth.positions[i * 3 + 1],
+            part.cloth.positions[i * 3 + 2],
+          ];
+          for (let j = 0; j < 4; j++) p = collide(p);
+          for (let k = 0; k < 3; k++) {
+            part.cloth.positions[i * 3 + k] = p[k];
+            part.cloth.previous[i * 3 + k] = p[k];
+          }
+        }
+      (part.mesh.geometry.getAttribute("position").array as Float32Array).set(
+        part.cloth.positions,
+      );
+      part.mesh.geometry.computeVertexNormals();
+    }
   return {
     group,
     parts,
     material,
     collide,
     dim,
-    canDrape: canDrapeGarment(m, d),
+    canDrape,
   };
 }

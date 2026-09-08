@@ -9,15 +9,18 @@ export class Cloth {
   edges: Edge[] = [];
   pinned: Set<number>;
   count: number;
+  anchors: Float32Array;
   constructor(
     points: number[],
     public columns: number,
     public rows: number,
     public stiffness = 0.8,
+    topology?: { indices: number[]; pinned: number[] },
   ) {
     this.positions = new Float32Array(points);
     this.previous = this.positions.slice();
     this.rest = this.positions.slice();
+    this.anchors = this.positions.slice();
     this.count = points.length / 3;
     this.pinned = new Set(Array.from({ length: columns }, (_, i) => i));
     const connect = (a: number, b: number, k: number) => {
@@ -34,6 +37,28 @@ export class Cloth {
         stiffness: k,
       });
     };
+    if (topology) {
+      this.pinned = new Set(topology.pinned);
+      const edges = new Map<
+        string,
+        { a: number; b: number; opposite: number }
+      >();
+      for (let i = 0; i < topology.indices.length; i += 3) {
+        const tri = topology.indices.slice(i, i + 3);
+        for (let j = 0; j < 3; j++) {
+          const a = tri[j],
+            b = tri[(j + 1) % 3],
+            opposite = tri[(j + 2) % 3],
+            key = a < b ? `${a}:${b}` : `${b}:${a}`,
+            previous = edges.get(key);
+          if (!previous) {
+            connect(a, b, stiffness);
+            edges.set(key, { a, b, opposite });
+          } else connect(previous.opposite, opposite, stiffness * 0.18);
+        }
+      }
+      return;
+    }
     for (let r = 0; r < rows; r++)
       for (let c = 0; c < columns; c++) {
         const a = r * columns + c,
@@ -46,6 +71,18 @@ export class Cloth {
         }
         if (r + 2 < rows) connect(a, a + columns * 2, stiffness * 0.15);
       }
+  }
+  fitAnchors(collide: (p: Vec3) => Vec3) {
+    for (const vertex of this.pinned) {
+      const i = vertex * 3;
+      let p: Vec3 = [this.rest[i], this.rest[i + 1], this.rest[i + 2]];
+      for (let pass = 0; pass < 4; pass++) p = collide(p);
+      for (let k = 0; k < 3; k++) {
+        this.anchors[i + k] = p[k];
+        this.positions[i + k] = p[k];
+        this.previous[i + k] = p[k];
+      }
+    }
   }
   step(collide: (p: Vec3) => Vec3) {
     const p = this.positions,
