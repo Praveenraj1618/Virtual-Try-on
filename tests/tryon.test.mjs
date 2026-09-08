@@ -29,6 +29,10 @@ const {
   defaultDesign,
   measurementsSchema,
   lookSchema,
+  templateDimensions,
+  upgradeDesign,
+  measurementComparison,
+  canDrapeGarment,
 } = await import(pathToFileURL(schemaOutput));
 function dispose(model) {
   const mats = new Set();
@@ -107,6 +111,7 @@ test("cloth remains finite, pinned and bounded across garment and body extremes"
       const model = createMannequin(body, {
         ...defaultDesign,
         kind,
+        garment: { ...templateDimensions[kind] },
         fabric: "silk",
         ease: 2,
         length: 120,
@@ -130,17 +135,121 @@ test("cloth remains finite, pinned and bounded across garment and body extremes"
       dispose(model);
     }
 });
-test("body changes produce different meshes and garments contain usable UVs", () => {
+test("body changes do not resize the independent garment", () => {
   const a = createMannequin(defaults, defaultDesign),
     b = createMannequin({ ...defaults, waist: 110, hips: 120 }, defaultDesign);
+  assert.deepEqual([...a.parts[0].cloth.rest], [...b.parts[0].cloth.rest]);
   assert.notDeepEqual(
-    [...a.parts[0].cloth.positions],
-    [...b.parts[0].cloth.positions],
+    [
+      ...a.group.children[0].children[0].geometry.getAttribute("position")
+        .array,
+    ],
+    [
+      ...b.group.children[0].children[0].geometry.getAttribute("position")
+        .array,
+    ],
   );
+  assert.equal(b.canDrape, false);
   for (const { mesh, cloth } of a.parts) {
     assert.equal(mesh.geometry.getAttribute("uv").count, cloth.count);
     assert.ok(mesh.geometry.index.count > 0);
   }
   dispose(a);
   dispose(b);
+});
+
+test("placement changes with height but garment edge lengths remain fixed", () => {
+  for (const kind of ["tshirt", "trousers", "dress"]) {
+    const design = {
+      ...defaultDesign,
+      kind,
+      garment: { ...templateDimensions[kind] },
+    };
+    const a = createMannequin(defaults, design),
+      b = createMannequin({ ...defaults, height: 185, inseam: 88 }, design);
+    for (let i = 0; i < a.parts.length; i++)
+      for (let j = 0; j < a.parts[i].cloth.edges.length; j++)
+        assert.ok(
+          Math.abs(
+            a.parts[i].cloth.edges[j].rest - b.parts[i].cloth.edges[j].rest,
+          ) < 1e-6,
+        );
+    dispose(a);
+    dispose(b);
+  }
+});
+test("measurement comparisons change with body size and block impossible draping", () => {
+  const design = {
+    ...defaultDesign,
+    garment: { ...defaultDesign.garment, chest: 100 },
+  };
+  assert.equal(
+    measurementComparison({ ...defaults, chest: 92 }, design).find(
+      (r) => r.key === "chest",
+    ).difference,
+    8,
+  );
+  assert.equal(
+    measurementComparison({ ...defaults, chest: 104 }, design).find(
+      (r) => r.key === "chest",
+    ).difference,
+    -4,
+  );
+  assert.equal(canDrapeGarment({ ...defaults, chest: 104 }, design), false);
+  assert.equal(canDrapeGarment(defaults, design), true);
+  assert.equal(
+    lookSchema.safeParse({
+      name: "Bad dimensions",
+      measurements: defaults,
+      design: { ...design, garment: { ...design.garment, chest: -3 } },
+    }).success,
+    false,
+  );
+});
+test("legacy designs upgrade using their saved body once, without changing new designs", () => {
+  const legacy = {
+    kind: "dress",
+    color: "#315a49",
+    ease: 8,
+    length: 100,
+    sleeve: 50,
+    fabric: "cotton",
+    texture: "",
+    reference: "",
+  };
+  const upgraded = upgradeDesign(legacy, defaults);
+  assert.equal(upgraded.garment.chest, defaults.chest + 8);
+  assert.equal(upgraded.garment.sleeveLength, defaults.arm * 0.5);
+  assert.deepEqual(
+    upgradeDesign(upgraded, { ...defaults, chest: 120 }),
+    upgraded,
+  );
+  assert.equal(
+    lookSchema.parse({ name: "Legacy", measurements: defaults, design: legacy })
+      .design.garment.chest,
+    100,
+  );
+});
+test("neckline, sleeve and silhouette choices change garment geometry", () => {
+  const base = createMannequin(defaults, defaultDesign);
+  for (const override of [
+    { neckline: "scoop" },
+    { neckline: "v" },
+    { silhouette: "flared" },
+    { sleeveStyle: "bell" },
+  ]) {
+    const changed = createMannequin(defaults, {
+      ...defaultDesign,
+      ...override,
+    });
+    const index = "sleeveStyle" in override ? 1 : 0;
+    assert.notDeepEqual(
+      [...changed.parts[index].cloth.rest],
+      [...base.parts[index].cloth.rest],
+    );
+    for (const part of changed.parts)
+      assert.ok([...part.cloth.rest].every(Number.isFinite));
+    dispose(changed);
+  }
+  dispose(base);
 });

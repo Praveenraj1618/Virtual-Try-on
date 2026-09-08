@@ -1,9 +1,13 @@
 import * as T from "three";
 import { Cloth, type Vec3 } from "./cloth";
-import type { Measurements, Design } from "./schema";
+import { canDrapeGarment, type Measurements, type Design } from "./schema";
 type Ring = { y: number; a: number; b: number };
 type Capsule = { start: T.Vector3; end: T.Vector3; r1: number; r2: number };
-export type GarmentPart = { mesh: T.Mesh; cloth: Cloth };
+export type GarmentPart = {
+  mesh: T.Mesh;
+  cloth: Cloth;
+  trims: { line: T.Line; vertices: number[] }[];
+};
 // Ramanujan's ellipse perimeter approximation; all input dimensions are cm.
 export function radiusForCircumference(cm: number, ratio = 0.72) {
   return (
@@ -112,6 +116,40 @@ function segmentPoints(
   }
   return pts;
 }
+// One continuous surface along each limb removes the old elbow/knee tube joins.
+function limbPoints(segments: Capsule[], rows = 42, columns = 40) {
+  const first = segments[0],
+    last = segments[1],
+    curve = new T.CatmullRomCurve3([
+      first.start,
+      first.start.clone().lerp(first.end, 0.52),
+      first.end,
+      last.start.clone().lerp(last.end, 0.46),
+      last.end,
+    ]);
+  const radii = [first.r1, first.r1 * 0.91, first.r2, last.r1 * 1.09, last.r2];
+  const points: number[] = [];
+  for (let row = 0; row < rows; row++) {
+    const t = row / (rows - 1),
+      center = curve.getPoint(t),
+      axis = curve.getTangent(t),
+      forward = new T.Vector3(0, 0, 1),
+      side = new T.Vector3().crossVectors(forward, axis).normalize();
+    const f = t * 4,
+      i = Math.min(3, Math.floor(f)),
+      u = f - i,
+      r = T.MathUtils.lerp(radii[i], radii[i + 1], u * u * (3 - 2 * u));
+    for (let c = 0; c < columns; c++) {
+      const angle = (c / columns) * Math.PI * 2,
+        p = center
+          .clone()
+          .addScaledVector(side, Math.sin(angle) * r)
+          .addScaledVector(forward, Math.cos(angle) * r * 0.92);
+      points.push(p.x, p.y, p.z);
+    }
+  }
+  return points;
+}
 export function createMannequin(m: Measurements, d: Design) {
   const group = new T.Group(),
     body = new T.Group(),
@@ -165,7 +203,25 @@ export function createMannequin(m: Measurements, d: Design) {
   ];
   addBody(geometry(ringPoints(rings, 44), 48, 44));
   sphere(0, h * 0.862, 0, 0.048, h * 0.041, 0.046);
-  sphere(0, h * 0.935, 0.006, h * 0.051, h * 0.066, h * 0.052);
+  const headGeometry = new T.SphereGeometry(1, 48, 36),
+    headVertices = headGeometry.getAttribute("position");
+  for (let i = 0; i < headVertices.count; i++) {
+    const x = headVertices.getX(i),
+      y = headVertices.getY(i),
+      z = headVertices.getZ(i);
+    headVertices.setXYZ(
+      i,
+      x * (y < -0.1 ? 1 + (y + 0.1) * 0.2 : 1),
+      y,
+      z > 0 ? z * 0.91 : z,
+    );
+  }
+  headGeometry.computeVertexNormals();
+  const head = addBody(headGeometry);
+  head.position.set(0, h * 0.932, 0.006);
+  head.scale.set(h * 0.05, h * 0.068, h * 0.056);
+  for (const side of [-1, 1])
+    sphere(side * h * 0.05, h * 0.937, 0, 0.009, 0.024, 0.014);
   const legs: Capsule[] = [],
     arms: Capsule[] = [];
   for (const side of [-1, 1]) {
@@ -176,7 +232,7 @@ export function createMannequin(m: Measurements, d: Design) {
       { start: hip, end: knee, r1: hipR * 0.5, r2: 0.049 },
       { start: knee, end: ankle, r1: 0.05, r2: 0.033 },
     );
-    sphere(knee.x, knee.y, knee.z, 0.049, 0.056, 0.048);
+
     sphere(ankle.x, 0.05, 0.058, 0.043, 0.046, 0.1);
     const s = new T.Vector3(side * (shoulderX - 0.015), shoulder - 0.025, 0),
       elbow = new T.Vector3(
@@ -194,17 +250,16 @@ export function createMannequin(m: Measurements, d: Design) {
       { start: elbow, end: wrist, r1: 0.039, r2: 0.026 },
     );
     sphere(s.x, s.y, 0, 0.058, 0.065, 0.058);
-    sphere(elbow.x, elbow.y, 0, 0.038, 0.041, 0.038);
+
     sphere(wrist.x + side * 0.01, wrist.y - 0.055, 0.004, 0.033, 0.065, 0.021);
   }
-  for (const segment of [...legs, ...arms])
-    addBody(
-      geometry(
-        segmentPoints(segment.start, segment.end, segment.r1, segment.r2),
-        32,
-        18,
-      ),
-    );
+  for (const pair of [
+    legs.slice(0, 2),
+    legs.slice(2),
+    arms.slice(0, 2),
+    arms.slice(2),
+  ])
+    addBody(geometry(limbPoints(pair), 40, 42));
   // Underwear keeps an unclothed mannequin neutral during garment changes.
   const base = new T.MeshStandardMaterial({
     color: "#8d958b",
@@ -227,112 +282,166 @@ export function createMannequin(m: Measurements, d: Design) {
     base,
   );
   body.add(baseMesh);
-  const ease = d.ease / 100 / (2 * Math.PI),
-    parts: GarmentPart[] = [];
+  // Clothing rest geometry depends only on garment dimensions. Body measurements
+  // supply a single vertical placement anchor; collision may drape but never re-size it.
+  const g = d.garment,
+    parts: GarmentPart[] = [],
+    anchor = d.kind === "trousers" ? waist : shoulder;
+  const gChest = radiusForCircumference(g.chest),
+    gWaist = radiusForCircumference(g.waist),
+    gHip = radiusForCircumference(g.hips),
+    gShoulder = g.shoulders / 200;
   const stiffness =
-    d.fabric === "denim" ? 0.96 : d.fabric === "silk" ? 0.53 : 0.8;
+    d.fabric === "denim" ? 0.97 : d.fabric === "silk" ? 0.68 : 0.88;
   const material = new T.MeshStandardMaterial({
     color: d.color,
     roughness: d.fabric === "silk" ? 0.42 : 0.94,
     side: T.DoubleSide,
     metalness: 0,
   });
-  const part = (pts: number[], cols: number, rows: number) => {
+  const trimMaterial = new T.LineBasicMaterial({
+    color: new T.Color(d.color).multiplyScalar(0.64),
+    transparent: true,
+    opacity: 0.7,
+  });
+  const part = (pts: number[], cols: number, rows: number, neck = false) => {
     const cloth = new Cloth(pts, cols, rows, stiffness),
       mesh = new T.Mesh(geometry(pts, cols, rows), material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     garments.add(mesh);
-    parts.push({ mesh, cloth });
+    const trims: GarmentPart["trims"] = [];
+    const trim = (vertices: number[], loop: boolean) => {
+      const geo = new T.BufferGeometry();
+      geo.setAttribute(
+        "position",
+        new T.Float32BufferAttribute(
+          vertices.flatMap((v) => pts.slice(v * 3, v * 3 + 3)),
+          3,
+        ),
+      );
+      const line = loop
+        ? new T.LineLoop(geo, trimMaterial)
+        : new T.Line(geo, trimMaterial);
+      line.renderOrder = 1;
+      garments.add(line);
+      trims.push({ line, vertices });
+    };
+    trim(
+      Array.from({ length: cols }, (_, c) => c),
+      true,
+    );
+    trim(
+      Array.from({ length: cols }, (_, c) => (rows - 1) * cols + c),
+      true,
+    );
+    // Side-seam guides remain attached to the deformed cloth vertices.
+    if (neck)
+      for (const column of [Math.floor(cols / 4), Math.floor((cols * 3) / 4)])
+        trim(
+          Array.from({ length: rows }, (_, r) => r * cols + column),
+          false,
+        );
+    parts.push({ mesh, cloth, trims });
   };
-  const neckline = { y: shoulder + 0.043, a: 0.071, b: 0.067 };
-  const upper: Ring[] = [
-    { y: waist, a: waistR + ease, b: waistR * 0.72 + ease },
-    { y: chest, a: chestR + ease, b: chestR * 0.72 + ease },
-    { y: shoulder - 0.005, a: shoulderX + 0.025, b: chestR * 0.68 + ease },
-    { y: shoulder + 0.022, a: shoulderX * 0.7, b: 0.084 },
-    neckline,
-  ];
   if (d.kind !== "trousers") {
-    const hem =
-      d.kind === "dress"
-        ? Math.max(0.24, waist - (0.62 * d.length) / 100)
-        : Math.max(crotch - 0.04, shoulder - (0.6 * d.length) / 100);
-    const bottom =
-      d.kind === "dress"
-        ? hipR + 0.085 + (d.length - 75) * 0.0009
-        : Math.max(hipR + ease, waistR + ease);
+    const hem = anchor - g.length / 100,
+      neckWidth = d.neckline === "scoop" ? 0.096 : 0.072;
+    const flare =
+      d.silhouette === "flared" ? 1.45 : d.silhouette === "tapered" ? 0.9 : 1;
+    const hipY = anchor - 0.44,
+      waistY = anchor - 0.32,
+      chestY = anchor - 0.16;
+    const upper: Ring[] = [
+      { y: hipY, a: gHip, b: gHip * 0.72 },
+      { y: waistY, a: gWaist, b: gWaist * 0.72 },
+      { y: chestY, a: gChest, b: gChest * 0.72 },
+      { y: anchor - 0.025, a: gShoulder, b: gChest * 0.6 },
+      { y: anchor + 0.02, a: gShoulder * 0.7, b: 0.084 },
+      { y: anchor + 0.043, a: neckWidth, b: neckWidth * 0.88 },
+    ];
     const torsoRings = [
-      {
-        y: hem,
-        a: bottom,
-        b: d.kind === "dress" ? bottom * 0.85 : hipR * 0.72 + ease,
-      },
-      ...(hem < crotch + 0.1
-        ? [
-            {
-              y: crotch + 0.1,
-              a: hipR + ease + 0.006,
-              b: hipR * 0.72 + ease + 0.006,
-            },
-          ]
-        : []),
+      { y: hem, a: gHip * flare, b: gHip * 0.72 * flare },
       ...upper.filter((r) => r.y > hem),
     ];
-    part(
-      ringPoints(torsoRings, 38, 48, d.kind === "dress" ? 0.012 : 0.003),
+    const points = ringPoints(
+      torsoRings,
       48,
-      38,
+      64,
+      d.silhouette === "flared" ? 0.006 : 0.001,
     );
-    if (d.sleeve > 0)
+    const depth =
+      d.neckline === "v" ? 0.125 : d.neckline === "scoop" ? 0.085 : 0.02;
+    for (let r = 0; r < 48; r++)
+      for (let c = 0; c < 64; c++) {
+        const i = (r * 64 + c) * 3,
+          angle = (c / 64) * Math.PI * 2,
+          front = Math.max(0, Math.cos(angle));
+        const opening =
+          d.neckline === "v"
+            ? Math.max(0, 1 - Math.abs(Math.sin(angle))) * front
+            : front * front;
+        points[i + 1] -=
+          depth *
+          opening *
+          Math.max(0, 1 - (anchor + 0.043 - points[i + 1]) / 0.24);
+        // A lowered front opening follows the chest surface instead of sinking into it.
+        if (front > 0 && points[i + 1] < anchor + 0.02) {
+          const section = interpolate(torsoRings, points[i + 1]);
+          points[i + 2] = Math.max(points[i + 2], section.b * front);
+        }
+      }
+    part(points, 64, 48, true);
+    if (g.sleeveLength > 0)
       for (const side of [-1, 1]) {
-        const index = side === -1 ? 0 : 2,
-          s = arms[index].start.clone();
-        s.x -= side * 0.013;
-        s.y += 0.012;
-        const end = s
-          .clone()
-          .lerp(arms[index + 1].end, Math.max(0.13, d.sleeve / 100));
-        part(
-          segmentPoints(
-            s,
-            end,
-            0.069 + ease * 0.4,
-            0.054 + ease * 0.4,
-            16,
-            32,
-            0.002,
+        const start = new T.Vector3(
+            side * (gShoulder - 0.01),
+            anchor - 0.045,
+            0,
           ),
-          32,
-          16,
+          end = start
+            .clone()
+            .add(
+              new T.Vector3(side * 0.29, -0.957, 0).multiplyScalar(
+                g.sleeveLength / 100,
+              ),
+            );
+        const upperRadius = Math.max(0.06, Math.min(0.13, gChest * 0.38)),
+          cuff =
+            d.sleeveStyle === "bell" ? upperRadius * 1.6 : upperRadius * 0.78;
+        part(
+          segmentPoints(start, end, upperRadius, cuff, 22, 40, 0.001),
+          40,
+          22,
         );
       }
   } else {
-    const pantsRings = [
-      { y: crotch - 0.015, a: hipR * 0.85 + ease, b: hipR * 0.7 + ease },
-      { y: crotch + 0.1, a: hipR + ease, b: hipR * 0.72 + ease },
-      { y: waist + 0.015, a: waistR + ease, b: waistR * 0.72 + ease },
-    ];
-    part(ringPoints(pantsRings, 18, 48, 0.002), 48, 18);
+    const crotchY = anchor - g.rise / 100,
+      legX = gHip * 0.5,
+      flare =
+        d.silhouette === "flared" ? 1.5 : d.silhouette === "tapered" ? 0.78 : 1;
+    part(
+      ringPoints(
+        [
+          { y: crotchY + 0.012, a: gHip * 0.92, b: gHip * 0.72 },
+          { y: anchor - g.rise / 200, a: gHip, b: gHip * 0.72 },
+          { y: anchor, a: gWaist, b: gWaist * 0.72 },
+        ],
+        24,
+        64,
+      ),
+      64,
+      24,
+      true,
+    );
     for (const side of [-1, 1]) {
-      const start = new T.Vector3(side * hipR * 0.49, crotch + 0.06, 0),
-        end = new T.Vector3(
-          side * hipR * 0.5,
-          Math.max(0.065, crotch - ((crotch - 0.085) * d.length) / 100),
-          0,
-        );
+      const start = new T.Vector3(side * legX, crotchY + 0.055, 0),
+        end = new T.Vector3(side * legX, crotchY - g.inseam / 100, 0);
       part(
-        segmentPoints(
-          start,
-          end,
-          hipR * 0.51 + ease,
-          0.052 + ease * 0.7,
-          30,
-          40,
-          0.003,
-        ),
+        segmentPoints(start, end, gHip * 0.51, 0.064 * flare, 36, 40, 0.001),
         40,
-        30,
+        36,
+        true,
       );
     }
   }
@@ -381,5 +490,12 @@ export function createMannequin(m: Measurements, d: Design) {
     }
     return [x, y, z];
   };
-  return { group, parts, material, collide, dim };
+  return {
+    group,
+    parts,
+    material,
+    collide,
+    dim,
+    canDrape: canDrapeGarment(m, d),
+  };
 }

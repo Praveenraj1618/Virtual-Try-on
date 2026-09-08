@@ -5,7 +5,7 @@ import {
   unavailable,
   privateHeaders,
 } from "@/lib/server";
-import { lookSchema, assetIdSchema } from "@/lib/tryon/schema";
+import { lookSchema, assetIdSchema, upgradeDesign } from "@/lib/tryon/schema";
 export async function GET(request: Request) {
   const user = owner(request);
   if (!user)
@@ -32,7 +32,10 @@ export async function GET(request: Request) {
           id: r.id,
           name: r.name,
           measurements: JSON.parse(r.measurements),
-          design: JSON.parse(r.design),
+          design: upgradeDesign(
+            JSON.parse(r.design),
+            JSON.parse(r.measurements),
+          ),
           createdAt: r.created_at,
         })),
       },

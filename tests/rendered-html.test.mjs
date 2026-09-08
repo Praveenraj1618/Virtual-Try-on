@@ -199,3 +199,89 @@ test("uploaded artwork is private and rejects mismatched content types", async (
   assert.equal((await request(url, { user: "bob" })).status, 404);
   assert.equal((await request(url, { user: null })).status, 401);
 });
+
+test("new garment dimensions and style choices survive save and reload", async () => {
+  const measurements = {
+    height: 172,
+    chest: 92,
+    waist: 76,
+    hips: 96,
+    shoulders: 42,
+    inseam: 78,
+    arm: 58,
+  };
+  const garment = {
+    chest: 104,
+    waist: 86,
+    hips: 108,
+    shoulders: 45,
+    length: 110,
+    sleeveLength: 24,
+    inseam: 80,
+    rise: 26,
+  };
+  const design = {
+    kind: "dress",
+    color: "#315a49",
+    fabric: "cotton",
+    texture: "",
+    reference: "",
+    garment,
+    neckline: "v",
+    silhouette: "flared",
+    sleeveStyle: "bell",
+  };
+  const response = await request("/api/looks", {
+    method: "POST",
+    body: { name: "Custom dress", measurements, design },
+  });
+  assert.equal(response.status, 201);
+  const { look } = await response.json();
+  const saved = (await (await request("/api/looks")).json()).looks.find(
+    (l) => l.id === look.id,
+  );
+  assert.deepEqual(saved.design.garment, garment);
+  assert.equal(saved.design.neckline, "v");
+  assert.equal(saved.design.sleeveStyle, "bell");
+  await request(`/api/looks?id=${look.id}`, { method: "DELETE" });
+});
+test("existing first-version database rows remain readable", async () => {
+  const id = crypto.randomUUID(),
+    m = {
+      height: 172,
+      chest: 92,
+      waist: 76,
+      hips: 96,
+      shoulders: 42,
+      inseam: 78,
+      arm: 58,
+    },
+    d = {
+      kind: "tshirt",
+      color: "#315a49",
+      ease: 8,
+      length: 100,
+      sleeve: 32,
+      fabric: "cotton",
+      texture: "",
+      reference: "",
+    };
+  sql
+    .prepare(
+      "INSERT INTO looks (id,owner_id,name,measurements,design,created_at) VALUES (?,?,?,?,?,?)",
+    )
+    .run(
+      id,
+      "alice",
+      "Old look",
+      JSON.stringify(m),
+      JSON.stringify(d),
+      new Date().toISOString(),
+    );
+  const saved = (await (await request("/api/looks")).json()).looks.find(
+    (l) => l.id === id,
+  );
+  assert.equal(saved.design.garment.chest, 100);
+  assert.equal(saved.design.neckline, "crew");
+  await request(`/api/looks?id=${id}`, { method: "DELETE" });
+});

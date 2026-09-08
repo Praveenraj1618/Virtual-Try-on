@@ -54,6 +54,8 @@ import {
   type Design,
   type Look,
 } from "@/lib/tryon/schema";
+import { GarmentEditor, MeasurementComparison } from "./garment-editor";
+import { templateDimensions, canDrapeGarment } from "@/lib/tryon/schema";
 const AvatarViewer = dynamic(() => import("./avatar-viewer"), {
   ssr: false,
   loading: () => <div className="fallback subtle">Loading the 3D studio…</div>,
@@ -66,41 +68,6 @@ const colors = [
   "#8d3948",
   "#303435",
 ];
-function Range({
-  label,
-  value,
-  min,
-  max,
-  suffix,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  suffix: string;
-  onChange: (v: number) => void;
-}) {
-  return (
-    <div className="field">
-      <div className="field-head">
-        <span>{label}</span>
-        <output>
-          {value}
-          {suffix}
-        </output>
-      </div>
-      <Slider
-        aria-label={label}
-        min={min}
-        max={max}
-        step={1}
-        value={[value]}
-        onValueChange={([v]) => onChange(v)}
-      />
-    </div>
-  );
-}
 async function responseData<T = Record<string, unknown>>(response: Response) {
   const data = (await response.json()) as T & { error?: string };
   if (!response.ok)
@@ -264,10 +231,21 @@ export default function Studio() {
     setTab("garments");
     toast.success(`Opened ${look.name}`);
   }
+  const selectTemplate = (kind: Design["kind"]) => {
+    if (kind === design.kind) return;
+    setDesign((d) => ({
+      ...d,
+      kind,
+      garment: { ...templateDimensions[kind] },
+      neckline: "crew",
+      silhouette: kind === "dress" ? "flared" : "straight",
+      sleeveStyle: "straight",
+    }));
+  };
   const garmentSelect = (
     <Select
       value={design.kind}
-      onValueChange={(v) => update("kind", v as Design["kind"])}
+      onValueChange={(v) => selectTemplate(v as Design["kind"])}
     >
       <SelectTrigger className="full" aria-label="Garment template">
         <SelectValue />
@@ -313,32 +291,8 @@ export default function Studio() {
           }
         />
       </div>
-      <Range
-        label="Added room"
-        value={design.ease}
-        min={2}
-        max={20}
-        suffix=" cm"
-        onChange={(v) => update("ease", v)}
-      />
-      <Range
-        label="Garment length"
-        value={design.length}
-        min={75}
-        max={120}
-        suffix="%"
-        onChange={(v) => update("length", v)}
-      />
-      {design.kind !== "trousers" && (
-        <Range
-          label="Sleeve length"
-          value={design.sleeve}
-          min={0}
-          max={100}
-          suffix="%"
-          onChange={(v) => update("sleeve", v)}
-        />
-      )}
+      <GarmentEditor design={design} onChange={setDesign} />
+      <hr className="divider" />
       <div className="field-head">
         <span>Fabric behaviour</span>
       </div>
@@ -358,6 +312,7 @@ export default function Studio() {
       <p className="subtle" style={{ fontSize: 12, marginTop: 9 }}>
         Illustrative fabric presets; not measured material properties.
       </p>
+      <MeasurementComparison measurements={measurements} design={design} />
     </>
   );
   return (
@@ -543,6 +498,7 @@ export default function Studio() {
                 360°
               </button>
               <button
+                disabled={!canDrapeGarment(measurements, design)}
                 onClick={() => setDrape((v) => v + 1)}
                 title="Relax the cloth again"
               >
@@ -551,7 +507,9 @@ export default function Studio() {
               </button>
             </div>
             <div className="stage-note">
-              Drag to rotate · Scroll or pinch to zoom
+              {canDrapeGarment(measurements, design)
+                ? "Drag to rotate · Scroll or pinch to zoom"
+                : "Draping paused · Check Body vs garment"}
             </div>
           </div>
         </section>
@@ -581,7 +539,7 @@ export default function Studio() {
                   key={key}
                   aria-pressed={design.kind === key}
                   className={`garment-choice ${design.kind === key ? "selected" : ""}`}
-                  onClick={() => update("kind", key as Design["kind"])}
+                  onClick={() => selectTemplate(key as Design["kind"])}
                 >
                   <span className="garment-icon">
                     {key === "tshirt" ? (
@@ -597,9 +555,9 @@ export default function Studio() {
                     <small>
                       {
                         [
-                          "Relaxed, round neck",
-                          "Full length, straight cut",
-                          "Flared, adjustable sleeves",
+                          "Editable neckline & sleeves",
+                          "Independent waist & inseam",
+                          "Editable neckline & hem",
                         ][i]
                       }
                     </small>
@@ -612,8 +570,8 @@ export default function Studio() {
               <div className="help">
                 <Info />
                 <span>
-                  Clothes adapt to the mannequin. Added room changes the cut;
-                  this preview does not recommend retail sizes.
+                  Changing templates loads example dimensions. Save your look
+                  before switching to keep your custom design.
                 </span>
               </div>
             </TabsContent>

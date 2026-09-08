@@ -7,7 +7,10 @@ A working 3D fitting-studio prototype: enter body measurements, customise a garm
 - **Seven manual measurements** in centimetres or inches, with guidance and validation.
 - **Measurement-driven 3D mannequin** with orbit, zoom, front/side/back views and automatic rotation.
 - **Three garment templates:** T-shirt, straight trousers and A-line dress.
-- **Garment editing:** colour, added room, length and sleeve length where applicable.
+- **Independent clothing dimensions:** garment chest, waist, hips, shoulder width, length, sleeve length, inseam and rise are stored separately from the body. Moving body sliders changes placement and draping, not the garment rest dimensions.
+- **Guided costume editor:** crew/scoop/V necklines; straight, tapered or flared hems/legs; straight or bell sleeves; centimetre-based dimensions and three illustrative size presets.
+- **Measurement comparison:** body and garment values shown side by side with signed differences in centimetres.
+- **Refined mannequin and detailing:** continuous limb surfaces, a tapered jaw, ears, and garment neckline/cuff/side-seam guides that follow the cloth.
 - **Basic cloth relaxation:** positional constraints, gravity, body collision and illustrative cotton/denim/silk presets.
 - **Design uploads:** repeat PNG/JPEG/WebP artwork across the garment, or keep a costume sketch alongside it as a reference.
 - **Private saved looks:** measurements, design choices and uploaded assets persist on the server and are scoped to the signed-in user.
@@ -21,12 +24,15 @@ The initial values are labelled **sample measurements**. Replace them before int
 This is a visual prototype, not a body-scanning or certified garment-fit system.
 
 - The mannequin is procedural geometry with estimated proportions. It is **not** a scan, SMPL reconstruction or anatomically exact digital twin. Torso circumference controls use elliptical cross-sections; other proportions are inferred.
-- Clothes are adapted to the current mannequin; the app does **not** simulate independently sized retail products or recommend S/M/L sizes.
+- Garments now retain their own dimensions independently of the mannequin. The examples are not retailer size charts and the app does not recommend S/M/L.
+- Drape is paused when a compared circumference has less than 2 cm clearance or the garment shoulders are narrower than the body. This is a conservative numerical gate, not a physical fit threshold. Undersized templates may visibly intersect the body instead of silently expanding.
+- Positive measurement differences do not establish comfort, correct fit, or that a garment can be put on. Closures, stretch, unmeasured limb circumferences and construction affect real fit.
 - The cloth solver is a small position-based relaxation model with pinned vertices, structural/shear/bending constraints and approximate collision. It is not a calibrated textile solver. Overlaps, seam artefacts and unusual body/garment combinations can produce imperfect previews.
 - Fabric labels select illustrative stiffness and shading presets; they do not represent measured material properties.
 - A print upload changes the surface artwork. A sketch upload is a manual design reference; **no automatic sketch-to-pattern or image-to-3D conversion is implemented**.
 - Camera measurement, arbitrary sewing-pattern import, learned body reconstruction and physically validated fit prediction are future stages.
-- Garment settings support editing the provided templates; this is not a general pattern editor.
+- Garment settings support the provided templates; this is not a sewing-pattern editor. Sleeve joins and seam lines are geometric approximations, not stitched pattern topology.
+- First-version saved looks are upgraded on read using their original saved measurements and settings. New looks store explicit garment dimensions. Existing database rows and migrations are not rewritten.
 
 ## Stack and architecture
 
@@ -85,7 +91,7 @@ npm run test:core
 npm test
 ```
 
-`npm test` builds the Worker, then checks the rendered workspace and API behaviour using in-memory SQLite and an R2 test double. Tests cover validation, body parameter changes, bounded cloth output across body/garment extremes, ownership isolation, save/load/delete and image format checks. They do not measure body-estimation accuracy or real-world garment fit. Browser visual testing is not part of this suite.
+`npm test` builds the Worker, then checks the rendered workspace and API behaviour using in-memory SQLite and an R2 test double. Tests cover validation, independent garment dimensions across body changes, style geometry, legacy look migration, bounded cloth output across body/garment extremes, ownership isolation, save/load/delete and image format checks. They do not measure body-estimation accuracy or real-world garment fit. Browser visual testing is not part of this suite.
 
 ## API
 
@@ -105,6 +111,7 @@ Mutations check same-origin requests. Server validation prevents saved looks fro
 app/                 Page, layout, styles and HTTP endpoints
 components/studio.tsx Fitting-room controls and saved-look workflow
 components/avatar-viewer.tsx  Three.js scene lifecycle
+components/garment-editor.tsx Dimensions, style choices and comparison table
 lib/tryon/schema.ts  Shared data model and input validation
 lib/tryon/model.ts   Mannequin and garment geometry
 lib/tryon/cloth.ts   Position-based relaxation solver
@@ -118,7 +125,7 @@ public/              Built-in textile print and favicon
 ## Next development stages
 
 1. **Body fidelity:** replace the procedural mannequin with a licensed parametric human body model and quantify measurement error against manually measured volunteers.
-2. **Garment fidelity:** model independent garment dimensions, sewing patterns, seam construction, body collision and calibrated fabric properties; evaluate against physical garments.
+2. **Garment fidelity:** build on the independent dimensions with sewing patterns, stitched seam construction, improved armholes, body collision and calibrated fabric properties; evaluate against physical garments.
 3. **Camera assistance:** guided front/side capture with known height, quality checks, uncertainty and manual correction. Never promise exact measurements from an ordinary photograph.
 4. **Sketch assistance:** recognise supported garment attributes and populate editable templates. Ask for missing back details, dimensions and fabric properties.
 5. **Pattern reconstruction:** research and validate sketch/image-to-pattern models before expanding to arbitrary costumes.

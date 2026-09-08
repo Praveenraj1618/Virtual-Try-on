@@ -131,7 +131,7 @@ export default function AvatarViewer({
       renderer.setAnimationLoop(null);
       controls.dispose();
       scene.traverse((o) => {
-        if (o instanceof T.Mesh) {
+        if (o instanceof T.Mesh || o instanceof T.Line) {
           o.geometry.dispose();
           const mats = Array.isArray(o.material) ? o.material : [o.material];
           mats.forEach((m) => m.dispose());
@@ -176,13 +176,25 @@ export default function AvatarViewer({
       );
     }
     const relax = () => {
-      if (stopped || frame++ > 55) return;
+      if (stopped || !model.canDrape || frame++ > 55) return;
       for (const part of model.parts) {
         part.cloth.step(model.collide);
         const attr = part.mesh.geometry.getAttribute("position");
         (attr.array as Float32Array).set(part.cloth.positions);
         attr.needsUpdate = true;
         part.mesh.geometry.computeVertexNormals();
+        for (const { line, vertices } of part.trims) {
+          const trim = line.geometry.getAttribute("position");
+          vertices.forEach((v, i) =>
+            trim.setXYZ(
+              i,
+              part.cloth.positions[v * 3],
+              part.cloth.positions[v * 3 + 1],
+              part.cloth.positions[v * 3 + 2],
+            ),
+          );
+          trim.needsUpdate = true;
+        }
       }
       animation = requestAnimationFrame(relax);
     };
@@ -195,7 +207,7 @@ export default function AvatarViewer({
       texture?.dispose();
       const materials = new Set<T.Material>();
       model.group.traverse((o) => {
-        if (o instanceof T.Mesh) {
+        if (o instanceof T.Mesh || o instanceof T.Line) {
           o.geometry.dispose();
           (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) =>
             materials.add(m),
