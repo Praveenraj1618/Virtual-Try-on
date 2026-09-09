@@ -38,6 +38,26 @@ export function detectOutline(
           border[k].push(data[i * 4 + k] * alpha + 255 * (1 - alpha));
     }
   }
+  if (mode === "sketch") {
+    const original = gray.slice();
+    for (let y = 1; y < height - 1; y++)
+      for (let x = 1; x < width - 1; x++) {
+        let sum = 0;
+        for (let dy = -1; dy <= 1; dy++)
+          for (let dx = -1; dx <= 1; dx++)
+            sum += original[(y + dy) * width + x + dx];
+        gray[y * width + x] = sum / 9;
+      }
+    integral.fill(0);
+    for (let y = 0; y < height; y++) {
+      let sum = 0;
+      for (let x = 0; x < width; x++) {
+        sum += gray[y * width + x];
+        integral[(y + 1) * (width + 1) + x + 1] =
+          integral[y * (width + 1) + x + 1] + sum;
+      }
+    }
+  }
   const bg = border.map(
       (a) => a.sort((a, b) => a - b)[Math.floor(a.length / 2)],
     ),
@@ -61,10 +81,7 @@ export function detectOutline(
       const distance = Math.hypot(
         ...bg.map((b, k) => data[i * 4 + k] * alpha + 255 * (1 - alpha) - b),
       );
-      mask[i] =
-        mode === "sketch"
-          ? +(gray[i] < mean - 9 && distance > 18)
-          : +(distance > 55);
+      mask[i] = mode === "sketch" ? +(gray[i] < mean - 4.5) : +(distance > 55);
     }
   // Join nearby pencil strokes before choosing a component; ignore isolated specks.
   const joined = new Uint8Array(n);
@@ -76,6 +93,7 @@ export function detectOutline(
             joined[(y + dy) * width + x + dx] = 1;
   const visited = new Uint8Array(n);
   let best: number[] = [];
+  const strokes: number[][] = [];
   let bestScore = 0;
   for (let i = 0; i < n; i++)
     if (joined[i] && !visited[i]) {
@@ -107,6 +125,14 @@ export function detectOutline(
             }
           }
       }
+      if (
+        queue.length >= 12 &&
+        maxY - minY >= 4 &&
+        maxX - minX >= 3 &&
+        minX > 1 &&
+        maxX < width - 2
+      )
+        strokes.push(queue);
       const centre = (minX + maxX) / 2,
         h = maxY - minY;
       const score = queue.length * (1 - Math.abs(centre - width / 2) / width);
@@ -115,6 +141,42 @@ export function detectOutline(
         bestScore = score;
       }
     }
+  if (mode === "sketch" && strokes.length) {
+    const selected = new Set(best),
+      reachX = Math.ceil(width * 0.07),
+      reachY = Math.ceil(height * 0.055);
+    for (let pass = 0; pass < 4; pass++) {
+      const occupancy = new Uint32Array((width + 1) * (height + 1));
+      for (let y = 0; y < height; y++) {
+        let sum = 0;
+        for (let x = 0; x < width; x++) {
+          sum += selected.has(y * width + x) ? 1 : 0;
+          occupancy[(y + 1) * stride + x + 1] =
+            occupancy[y * stride + x + 1] + sum;
+        }
+      }
+      for (const stroke of strokes) {
+        if (selected.has(stroke[0])) continue;
+        const near = stroke.some((v) => {
+          const x = v % width,
+            y = Math.floor(v / width),
+            x0 = Math.max(0, x - reachX),
+            x1 = Math.min(width, x + reachX + 1),
+            y0 = Math.max(0, y - reachY),
+            y1 = Math.min(height, y + reachY + 1);
+          return (
+            occupancy[y1 * stride + x1] -
+              occupancy[y0 * stride + x1] -
+              occupancy[y1 * stride + x0] +
+              occupancy[y0 * stride + x0] >
+            0
+          );
+        });
+        if (near) stroke.forEach((v) => selected.add(v));
+      }
+    }
+    best = [...selected];
+  }
   if (best.length < 60)
     throw new Error(
       "No clear outline found. Try a brighter, closer crop on a plain background, or adjust the points manually.",
@@ -125,8 +187,33 @@ export function detectOutline(
     right = xs[Math.floor(xs.length * 0.985)],
     top = ys[Math.floor(ys.length * 0.01)],
     bottom = ys[Math.floor(ys.length * 0.99)];
-  const h = bottom - top,
-    centre = (left + right) / 2;
+  let h = bottom - top;
+  const originalHeight = h;
+  const centreBase = (left + right) / 2;
+  const widthAt = (y: number) => {
+    const row = best
+      .filter((i) => Math.abs(Math.floor(i / width) - y) < 3)
+      .map((i) => i % width)
+      .sort((a, b) => a - b);
+    return row.length > 5
+      ? row[Math.floor(row.length * 0.97)] - row[Math.floor(row.length * 0.03)]
+      : 0;
+  };
+  let separateLower = false;
+  for (let y = top + h * 0.56; y < top + h * 0.89; y += 2) {
+    const before = widthAt(y - 5),
+      after = widthAt(y + 6);
+    if (
+      before > (right - left) * 0.65 &&
+      after > width * 0.1 &&
+      after < before * 0.7
+    ) {
+      h = y - top;
+      separateLower = true;
+      break;
+    }
+  }
+  const centre = centreBase;
   if (h < height * 0.2 || (right - left) * h > width * height * 0.9)
     throw new Error(
       "The background is mixed with the design. Crop to one garment or switch Sketch / Photo.",
@@ -145,21 +232,41 @@ export function detectOutline(
     x: (x / width) * 100,
     y: (y / height) * 100,
   });
+  let waistFraction = 0.3,
+    narrowest = Infinity;
+  for (let f = 0.2; f <= 0.46; f += 0.02) {
+    const span = widthAt(top + h * f);
+    if (span > width * 0.17 && span < narrowest) {
+      narrowest = span;
+      waistFraction = f;
+    }
+  }
+  const chestFraction = Math.max(0.12, waistFraction - 0.09),
+    hipFraction = waistFraction + (1 - waistFraction) * 0.5;
   const shoulderX = Math.max(centre + (right - left) * 0.2, edge(0.08)),
-    chestX = Math.max(centre + (right - left) * 0.2, edge(0.25));
+    chestX = Math.max(centre + (right - left) * 0.16, edge(chestFraction));
   const points = [
     p(centre, top + h * 0.07),
     p(shoulderX, top + h * 0.03),
-    p(chestX, top + h * 0.25),
-    p(edge(0.43), top + h * 0.43),
-    p(edge(0.66), top + h * 0.66),
-    p(edge(0.92), top + h * 0.95),
-    p(edge(0.22), top + h * 0.22),
-    p(edge(0.28), top + h * 0.28),
+    p(chestX, top + h * chestFraction),
+    p(
+      Math.max(centre + width * 0.09, edge(waistFraction)),
+      top + h * waistFraction,
+    ),
+    p(
+      Math.max(centre + width * 0.09, edge(hipFraction)),
+      top + h * hipFraction,
+    ),
+    p(Math.max(centre + width * 0.09, edge(0.92)), top + h * 0.95),
+    p(edge(0.13), top + h * 0.13),
+    p(edge(0.18), top + h * 0.18),
   ];
   return {
     points,
-    message:
-      "Suggested outline — check the shoulder and bottom edge, especially for layered designs.",
+    separateLower,
+    lowerLengthRatio: originalHeight / h,
+    message: separateLower
+      ? "Possible separate lower layer found. Check the main bottom edge and choose whether to add trousers."
+      : "Suggested outline — check the full silhouette, including any faint or disconnected pencil lines.",
   };
 }

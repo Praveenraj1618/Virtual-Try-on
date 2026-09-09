@@ -134,7 +134,7 @@ export const templateDimensions: Record<
     rise: 26,
   },
 };
-export const designSchema = z.object({
+const garmentDesignSchema = z.object({
   kind: z.enum(["tshirt", "trousers", "dress"]),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   // Retained solely to read first-version saved looks.
@@ -157,7 +157,7 @@ export const designSchema = z.object({
       chestAt: z.number().min(0.03).max(0.5),
       waistAt: z.number().min(0.08).max(0.85),
       hipAt: z.number().min(0.15).max(0.98),
-      hemCircumference: z.number().min(60).max(250),
+      hemCircumference: z.number().min(60).max(500),
       neckDepth: z.number().min(0).max(25),
     })
     .refine(
@@ -168,6 +168,9 @@ export const designSchema = z.object({
   neckline: z.enum(["crew", "scoop", "v"]).default("crew"),
   silhouette: z.enum(["straight", "tapered", "flared"]).default("straight"),
   sleeveStyle: z.enum(["straight", "bell"]).default("straight"),
+});
+export const designSchema = garmentDesignSchema.extend({
+  layers: z.array(garmentDesignSchema).max(3).optional(),
 });
 export type Design = z.infer<typeof designSchema>;
 export const defaultDesign: Design = designSchema.parse({
@@ -221,9 +224,9 @@ export type Look = z.infer<typeof lookSchema> & {
   createdAt: string;
 };
 export const garmentNames = {
-  tshirt: "Everyday tee",
-  trousers: "Tailored trousers",
-  dress: "Studio dress",
+  tshirt: "Top",
+  trousers: "Trousers",
+  dress: "Dress / tunic",
 };
 export function measurementComparison(m: Measurements, d: Design) {
   const keys: ("chest" | "waist" | "hips" | "shoulders" | "inseam")[] =

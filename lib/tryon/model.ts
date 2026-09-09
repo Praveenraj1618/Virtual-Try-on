@@ -354,22 +354,26 @@ export function createMannequin(
           ...(pts.slice(i * 3, i * 3 + 3) as [number, number, number]),
         );
         const side = bindings.get(i) ?? Math.sign(point.x);
+        // The bodice belongs to the torso. Only sleeve vertices follow the arm;
+        // shared armhole vertices blend locally instead of dragging the chest.
         const roots =
           topology.loops[side > 0 ? 2 : d.garment.sleeveLength > 0 ? 4 : 3];
+        const isRoot = roots.includes(i);
         let distance = Infinity;
-        for (const v of roots)
-          distance = Math.min(
-            distance,
-            Math.hypot(
-              point.x - pts[v * 3],
-              point.y - pts[v * 3 + 1],
-              point.z - pts[v * 3 + 2],
-            ),
-          );
+        if (bindings.has(i) && !isRoot)
+          for (const v of roots)
+            distance = Math.min(
+              distance,
+              Math.hypot(
+                point.x - pts[v * 3],
+                point.y - pts[v * 3 + 1],
+                point.z - pts[v * 3 + 2],
+              ),
+            );
         const weight = bindings.has(i)
-          ? 1
-          : 1 - T.MathUtils.smoothstep(distance, 0, 0.15);
-        cloth.attachment[i] = 0.004 + weight * 0.065;
+          ? 0.3 + 0.7 * T.MathUtils.smoothstep(isRoot ? 0 : distance, 0, 0.1)
+          : 0;
+        cloth.attachment[i] = bindings.has(i) ? 0.07 : 0.035;
         if (!weight) continue;
         const rig = armRig(
           side,
@@ -614,4 +618,68 @@ export function createMannequin(
     dim,
     canDrape,
   };
+}
+
+/** Compose up to four independently sized garments on one shared mannequin. */
+export function createOutfit(
+  m: Measurements,
+  designs: Design[],
+  pose: Pose = neutralPose,
+) {
+  const models = designs.map((d) => createMannequin(m, d, pose));
+  const group = new T.Group();
+  const trousers = designs.find((d) => d.kind === "trousers");
+  const dim = dimensions(m);
+  const parts = models.flatMap((model, index) => {
+    const body = model.group.children[0],
+      garmentGroup = model.group.children[1];
+    if (index === 0) group.add(body);
+    else {
+      const materials = new Set<T.Material>();
+      body.traverse((o) => {
+        if (o instanceof T.Mesh) {
+          o.geometry.dispose();
+          (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) =>
+            materials.add(m),
+          );
+        }
+      });
+      materials.forEach((m) => m.dispose());
+    }
+    group.add(garmentGroup);
+    const collide = (p: Vec3): Vec3 => {
+      let q = model.collide(p);
+      // A clearance envelope for an untucked upper garment over trousers.
+      if (
+        trousers &&
+        designs[index].kind !== "trousers" &&
+        q[1] < dim.waist + 0.015 &&
+        q[1] > dim.crotch + 0.02
+      ) {
+        const t = T.MathUtils.clamp(
+          (q[1] - dim.crotch) / (dim.waist - dim.crotch),
+          0,
+          1,
+        );
+        const a =
+            radiusForCircumference(
+              T.MathUtils.lerp(
+                trousers.garment.hips,
+                trousers.garment.waist,
+                t,
+              ),
+            ) + 0.009,
+          b = a * 0.72 + 0.003;
+        const r = Math.hypot(q[0] / a, q[2] / b);
+        if (r > 1e-6 && r < 1) q = [q[0] / r, q[1], q[2] / r];
+      }
+      return q;
+    };
+    return model.parts.map((part) => ({
+      ...part,
+      collide,
+      canDrape: model.canDrape,
+    }));
+  });
+  return { group, parts, models, canDrape: parts.some((p) => p.canDrape) };
 }

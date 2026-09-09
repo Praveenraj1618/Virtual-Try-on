@@ -115,3 +115,72 @@ test("subdivided posed cloth has four times the faces with contact clearance", (
     if (o.material) o.material.dispose();
   });
 });
+
+test("outfits share one body and preserve separate garment geometry and materials", async () => {
+  const { createOutfit } = await moduleAt("model");
+  const { templateDimensions } = await moduleAt("schema");
+  const trousers = {
+    ...defaultDesign,
+    kind: "trousers",
+    color: "#202d48",
+    garment: { ...templateDimensions.trousers },
+  };
+  const saved = lookSchema.parse({
+    name: "Two-piece outfit",
+    measurements: defaultMeasurements,
+    design: { ...defaultDesign, layers: [trousers] },
+  });
+  assert.equal(saved.design.layers.length, 1);
+  const outfit = createOutfit(defaultMeasurements, [
+    saved.design,
+    ...saved.design.layers,
+  ]);
+  assert.equal(
+    outfit.group.children.length,
+    3,
+    "one body and two clothing groups",
+  );
+  assert.equal(
+    outfit.parts.length,
+    4,
+    "one upper garment and three trouser panels",
+  );
+  assert.notEqual(outfit.models[0].material, outfit.models[1].material);
+  for (const part of outfit.parts) {
+    part.cloth.step(part.collide);
+    assert.ok([...part.cloth.positions].every(Number.isFinite));
+  }
+  outfit.group.traverse((o) => {
+    o.geometry?.dispose();
+    o.material?.dispose();
+  });
+});
+test("wide-arm pose leaves centre chest targets attached to the torso", () => {
+  const normal = createMannequin(defaultMeasurements, defaultDesign);
+  const wide = createMannequin(defaultMeasurements, defaultDesign, {
+    left: { raise: 68, forward: 0, bend: 0 },
+    right: { raise: 68, forward: 0, bend: 0 },
+  });
+  const a = normal.parts[0].cloth,
+    b = wide.parts[0].cloth;
+  let checked = 0;
+  for (let i = 0; i < a.count; i++)
+    if (
+      Math.abs(a.rest[i * 3]) < 0.11 &&
+      a.rest[i * 3 + 1] > normal.dim.chest &&
+      a.rest[i * 3 + 1] < normal.dim.shoulder - 0.06
+    ) {
+      assert.ok(
+        Math.hypot(
+          ...[0, 1, 2].map((k) => a.target[i * 3 + k] - b.target[i * 3 + k]),
+        ) < 0.003,
+      );
+      checked++;
+    }
+  assert.ok(checked > 30);
+  for (const model of [normal, wide])
+    model.group.traverse((o) => {
+      o.geometry?.dispose();
+      o.material?.dispose();
+    });
+});

@@ -221,6 +221,20 @@ export function GarmentEditor({
           Illustrative examples, not retail size labels.
         </p>
       </div>
+      {design.tracedShape && (
+        <DimensionField
+          label="Bottom-edge circumference"
+          value={design.tracedShape.hemCircumference}
+          min={60}
+          max={500}
+          onChange={(v) =>
+            onChange({
+              ...design,
+              tracedShape: { ...design.tracedShape!, hemCircumference: v },
+            })
+          }
+        />
+      )}
       {fields.map(({ key, ...field }) => (
         <DimensionField
           key={key}

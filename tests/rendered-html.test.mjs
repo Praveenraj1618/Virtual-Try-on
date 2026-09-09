@@ -285,3 +285,54 @@ test("existing first-version database rows remain readable", async () => {
   assert.equal(saved.design.neckline, "crew");
   await request(`/api/looks?id=${id}`, { method: "DELETE" });
 });
+
+test("outfit layers survive save and reload and validate every layer's image owner", async () => {
+  const top = {
+    kind: "tshirt",
+    color: "#315a49",
+    fabric: "cotton",
+    texture: "",
+    reference: "",
+  };
+  const pants = { ...top, kind: "trousers", color: "#202d48" };
+  const body = {
+    height: 172,
+    chest: 92,
+    waist: 76,
+    hips: 96,
+    shoulders: 42,
+    inseam: 78,
+    arm: 58,
+  };
+  const response = await request("/api/looks", {
+    method: "POST",
+    body: {
+      name: "Layered outfit",
+      measurements: body,
+      design: { ...top, layers: [pants] },
+    },
+  });
+  assert.equal(response.status, 201);
+  const saved = (await response.json()).look;
+  const result = (await (await request("/api/looks")).json()).looks.find(
+    (l) => l.id === saved.id,
+  );
+  assert.equal(result.design.layers[0].color, "#202d48");
+  const invalid = await request("/api/looks", {
+    method: "POST",
+    body: {
+      name: "Unowned image",
+      measurements: body,
+      design: {
+        ...top,
+        layers: [
+          {
+            ...pants,
+            texture: "/api/assets/00000000-0000-4000-8000-000000000000",
+          },
+        ],
+      },
+    },
+  });
+  assert.equal(invalid.status, 400);
+});

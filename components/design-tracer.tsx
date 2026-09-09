@@ -22,7 +22,12 @@ import {
   type TracePoint,
 } from "@/lib/tryon/design-trace";
 import { detectOutline } from "@/lib/tryon/outline-detection";
-import type { Design, Measurements } from "@/lib/tryon/schema";
+import {
+  defaultDesign,
+  templateDimensions,
+  type Design,
+  type Measurements,
+} from "@/lib/tryon/schema";
 const labels = [
   "Neck centre",
   "Shoulder",
@@ -57,7 +62,9 @@ export function DesignTracer({
       design.kind === "tshirt" ? "hip" : "knee",
     ),
     [mode, setMode] = useState<"sketch" | "photo">("sketch"),
-    [detecting, setDetecting] = useState(false);
+    [detecting, setDetecting] = useState(false),
+    [lowerLayer, setLowerLayer] = useState(false),
+    [sleeveCut, setSleeveCut] = useState("outline");
   const image = useRef<HTMLImageElement>(null),
     detected = useRef(false),
     drag = useRef<number | null>(null);
@@ -102,6 +109,7 @@ export function DesignTracer({
         mode,
       );
       setPoints(result.points);
+      setLowerLayer(result.separateLower);
       setMessage(result.message);
     } catch (e) {
       setError((e as Error).message);
@@ -305,6 +313,24 @@ export function DesignTracer({
                 />
                 No sleeves
               </label>
+              <label className="trace-check">
+                <Checkbox
+                  checked={lowerLayer}
+                  onCheckedChange={(v) => setLowerLayer(v === true)}
+                />
+                Add trousers beneath this piece
+              </label>
+              <Select value={sleeveCut} onValueChange={setSleeveCut}>
+                <SelectTrigger aria-label="Sleeve cut">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="outline">Sleeves from outline</SelectItem>
+                  <SelectItem value="cap">Cap sleeves</SelectItem>
+                  <SelectItem value="short">Short sleeves</SelectItem>
+                  <SelectItem value="long">Long sleeves</SelectItem>
+                </SelectContent>
+              </Select>
               <h3>2. Choose the size</h3>
               <Select value={sizing} onValueChange={setSizing}>
                 <SelectTrigger aria-label="Sizing method">
@@ -392,6 +418,27 @@ export function DesignTracer({
                             sleeveless,
                             design,
                           );
+                    if (!sleeveless && sleeveCut !== "outline")
+                      next.garment.sleeveLength =
+                        sleeveCut === "cap"
+                          ? 8
+                          : sleeveCut === "short"
+                            ? 20
+                            : measurements.arm;
+                    if (lowerLayer)
+                      next.layers = [
+                        {
+                          ...defaultDesign,
+                          kind: "trousers",
+                          color: "#d8d1c5",
+                          garment: {
+                            ...templateDimensions.trousers,
+                            waist: measurements.waist + 8,
+                            hips: measurements.hips + 10,
+                            inseam: measurements.inseam,
+                          },
+                        },
+                      ];
                     onChange(next);
                     setOpen(false);
                   } catch (e) {

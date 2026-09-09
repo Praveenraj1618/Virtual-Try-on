@@ -146,9 +146,13 @@ export function estimateDesign(
     h = hem.y - shoulder.y;
   const level = (y: number, min: number, max: number) =>
     Math.max(min, Math.min(max, (y - shoulder.y) / h));
+  const chestAt = level(chest.y, 0.08, 0.4),
+    waistAt = level(waist.y, chestAt + 0.04, 0.7),
+    hipAt = level(hip.y, waistAt + 0.04, 0.92);
   return designSchema.parse({
     ...design,
     texture: "",
+    silhouette: hem.x - neck.x > width * 1.15 ? "flared" : "straight",
     kind: ending === "hip" ? "tshirt" : "dress",
     garment: {
       ...design.garment,
@@ -170,13 +174,13 @@ export function estimateDesign(
           ),
     },
     tracedShape: {
-      chestAt: level(chest.y, 0.08, 0.4),
-      waistAt: level(waist.y, 0.42, 0.6),
-      hipAt: level(hip.y, 0.62, 0.88),
+      chestAt,
+      waistAt,
+      hipAt,
       hemCircumference: clamp(
         (chestSize * (hem.x - neck.x)) / width,
         body.hips + 8,
-        250,
+        500,
       ),
       neckDepth: clamp(((neck.y - shoulder.y) / h) * length, 1, 18),
     },

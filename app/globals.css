@@ -908,3 +908,51 @@ h1 {
     height: 540px;
   }
 }
+.outfit-items {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 14px;
+}
+.outfit-item {
+  display: flex;
+  justify-content: space-between;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+.outfit-item.selected {
+  border-color: #245442;
+  background: #eef4ef;
+}
+.outfit-item .button {
+  padding: 7px;
+  font-size: 13px;
+}
+.outfit-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid #0002;
+}
+.catalogue-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+  padding: 12px 0;
+}
+.catalogue-item strong,
+.catalogue-item small {
+  display: block;
+  font-size: 14px;
+}
+.catalogue-actions {
+  display: flex;
+  gap: 4px;
+}
+.catalogue-actions .button {
+  padding: 7px;
+  font-size: 13px;
+}

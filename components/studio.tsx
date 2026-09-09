@@ -56,6 +56,7 @@ import {
 } from "@/lib/tryon/schema";
 import { GarmentEditor, MeasurementComparison } from "./garment-editor";
 import { templateDimensions, canDrapeGarment } from "@/lib/tryon/schema";
+import { garmentCatalogue } from "@/lib/tryon/catalogue";
 import { PoseEditor } from "./pose-editor";
 import { DesignTracer } from "./design-tracer";
 import { neutralPose, type Pose } from "@/lib/tryon/pose";
@@ -82,7 +83,20 @@ export default function Studio() {
       ...defaultMeasurements,
     }),
     [draft, setDraft] = useState<Measurements>({ ...defaultMeasurements }),
-    [design, setDesign] = useState<Design>({ ...defaultDesign });
+    [outfit, setOutfit] = useState<Design[]>([{ ...defaultDesign }]);
+  const [activeGarment, setActiveGarment] = useState(0);
+  const design = outfit[activeGarment] ?? outfit[0];
+  const setDesign = (value: Design | ((d: Design) => Design)) => {
+    setOutfit((items) => {
+      const next =
+        typeof value === "function"
+          ? value(items[activeGarment] ?? items[0])
+          : value;
+      const { layers, ...main } = next;
+      const updated = items.map((d, i) => (i === activeGarment ? main : d));
+      return layers ? [...updated, ...layers].slice(0, 4) : updated;
+    });
+  };
   const [pose, setPose] = useState<Pose>(neutralPose);
   const [units, setUnits] = useState("cm"),
     [tab, setTab] = useState("garments"),
@@ -181,7 +195,11 @@ export default function Studio() {
         await fetch("/api/looks", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, measurements, design }),
+          body: JSON.stringify({
+            name,
+            measurements,
+            design: { ...outfit[0], layers: outfit.slice(1) },
+          }),
         }),
       );
       setLooks((l) => [data.look, ...l]);
@@ -228,7 +246,9 @@ export default function Studio() {
   function openLook(look: Look) {
     setMeasurements({ ...look.measurements });
     setDraft({ ...look.measurements });
-    setDesign({ ...look.design });
+    const { layers, ...first } = look.design;
+    setOutfit([first, ...(layers ?? [])]);
+    setActiveGarment(0);
     setIsSample(false);
     setMeasurementError("");
     setError("");
@@ -352,7 +372,11 @@ export default function Studio() {
         <section className="stage" aria-label="3D fitting preview">
           <div className="stage-top">
             <div>
-              <strong>{garmentNames[design.kind]}</strong>
+              <strong>
+                {outfit.length > 1
+                  ? `${outfit.length}-piece outfit`
+                  : garmentNames[design.kind]}
+              </strong>
               <span>
                 {design.fabric.charAt(0).toUpperCase() + design.fabric.slice(1)}{" "}
                 / {design.texture ? "Printed" : "Solid colour"}
@@ -365,7 +389,7 @@ export default function Studio() {
           <AvatarViewer
             measurements={measurements}
             pose={pose}
-            design={design}
+            designs={outfit}
             view={view}
             turn={turn}
             drape={drape}
@@ -414,6 +438,38 @@ export default function Studio() {
           <div className="panel-title">
             <h2>Fitting tools</h2>
             <SlidersHorizontal />
+          </div>
+          <div className="outfit-items" aria-label="Outfit garments">
+            {outfit.map((item, i) => (
+              <div
+                className={`outfit-item ${i === activeGarment ? "selected" : ""}`}
+                key={i}
+              >
+                <button
+                  className="button quiet"
+                  aria-pressed={i === activeGarment}
+                  onClick={() => setActiveGarment(i)}
+                >
+                  <span
+                    className="outfit-dot"
+                    style={{ background: item.color }}
+                  />
+                  {i + 1}. {garmentNames[item.kind]}
+                </button>
+                {outfit.length > 1 && (
+                  <button
+                    className="button quiet"
+                    aria-label={`Remove garment ${i + 1}`}
+                    onClick={() => {
+                      setOutfit((items) => items.filter((_, j) => j !== i));
+                      setActiveGarment(0);
+                    }}
+                  >
+                    <Trash2 />
+                  </button>
+                )}
+              </div>
+            ))}
           </div>
           <Tabs
             value={tab}
@@ -542,44 +598,47 @@ export default function Studio() {
               <div className="eyebrow" style={{ marginBottom: 13 }}>
                 CHOOSE A TEMPLATE
               </div>
-              {Object.entries(garmentNames).map(([key, title], i) => (
-                <button
-                  key={key}
-                  aria-pressed={design.kind === key}
-                  className={`garment-choice ${design.kind === key ? "selected" : ""}`}
-                  onClick={() => selectTemplate(key as Design["kind"])}
-                >
-                  <span className="garment-icon">
-                    {key === "tshirt" ? (
-                      <Shirt size={25} />
-                    ) : key === "trousers" ? (
-                      <MoveHorizontal size={25} />
-                    ) : (
-                      <Layers size={25} />
-                    )}
-                  </span>
-                  <span style={{ flex: 1 }}>
-                    <strong>{title}</strong>
-                    <small>
-                      {
-                        [
-                          "Editable neckline & sleeves",
-                          "Independent waist & inseam",
-                          "Editable neckline & hem",
-                        ][i]
-                      }
-                    </small>
-                  </span>
-                  {design.kind === key && <Check size={16} />}
-                </button>
+              <p className="subtle">
+                Choose a cut. Replace edits the selected piece; Add keeps the
+                rest of your outfit.
+              </p>
+              {garmentCatalogue.map((item) => (
+                <div className="catalogue-item" key={item.id}>
+                  <div>
+                    <strong>{item.name}</strong>
+                    <small className="subtle">{item.description}</small>
+                  </div>
+                  <div className="catalogue-actions">
+                    <button
+                      className="button"
+                      onClick={() => setDesign(item.design)}
+                    >
+                      Replace
+                    </button>
+                    <button
+                      className="button"
+                      disabled={outfit.length >= 4}
+                      onClick={() => {
+                        setOutfit((items) => [...items, item.design]);
+                        setActiveGarment(outfit.length);
+                      }}
+                    >
+                      Add
+                    </button>
+                  </div>
+                </div>
               ))}
+              <p className="subtle">
+                Up to four pieces. Overlapping upper garments use approximate
+                layering; shirt + trousers is the supported starting outfit.
+              </p>
               {designControls}
               <hr className="divider" />
               <div className="help">
                 <Info />
                 <span>
-                  Changing templates loads example dimensions. Save your look
-                  before switching to keep your custom design.
+                  Changing templates loads example dimensions. Save your look to
+                  keep every piece and its custom dimensions.
                 </span>
               </div>
             </TabsContent>
@@ -809,8 +868,8 @@ export default function Studio() {
           <DialogHeader>
             <DialogTitle>Save this look</DialogTitle>
             <DialogDescription>
-              Your current measurements and design will be saved together in
-              your private wardrobe.
+              Your current measurements and all outfit pieces will be saved
+              together in your private wardrobe.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={saveLook}>

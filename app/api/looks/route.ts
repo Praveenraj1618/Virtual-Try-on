@@ -74,7 +74,10 @@ export async function POST(request: Request) {
       );
     const { name, measurements, design } = parsed.data,
       db = database();
-    for (const path of [design.texture, design.reference])
+    for (const path of [design, ...(design.layers ?? [])].flatMap((item) => [
+      item.texture,
+      item.reference,
+    ]))
       if (path.startsWith("/api/assets/")) {
         const asset = await db
           .prepare("SELECT id FROM assets WHERE id = ? AND owner_id = ?")

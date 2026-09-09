@@ -3,13 +3,13 @@ import { useEffect, useRef, useState } from "react";
 import * as T from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { createRenderSurface } from "@/lib/tryon/render-surface";
-import { createMannequin } from "@/lib/tryon/model";
+import { createOutfit } from "@/lib/tryon/model";
 import type { Measurements, Design } from "@/lib/tryon/schema";
 import type { Pose } from "@/lib/tryon/pose";
 type Props = {
   pose: Pose;
   measurements: Measurements;
-  design: Design;
+  designs: Design[];
   view: string;
   turn: boolean;
   drape: number;
@@ -18,7 +18,7 @@ type Props = {
 export default function AvatarViewer({
   measurements,
   pose,
-  design,
+  designs,
   view,
   turn,
   drape,
@@ -151,7 +151,7 @@ export default function AvatarViewer({
     const rt = runtime.current;
     if (!rt || !ready) return;
     setError("");
-    const model = createMannequin(measurements, design, pose);
+    const model = createOutfit(measurements, designs, pose);
     const surfaces = model.parts.map((part) => {
       const source = part.mesh.geometry;
       const surface = createRenderSurface(source);
@@ -159,7 +159,7 @@ export default function AvatarViewer({
       source.dispose();
       surface.update(
         part.cloth.positions,
-        model.canDrape ? model.collide : undefined,
+        part.canDrape ? part.collide : undefined,
       );
       return surface;
     });
@@ -167,34 +167,37 @@ export default function AvatarViewer({
     let stopped = false,
       frame = 0,
       animation = 0,
-      texture: T.Texture | undefined;
-    if (design.texture) {
-      new T.TextureLoader().load(
-        design.texture,
-        (t) => {
-          if (stopped) {
-            t.dispose();
-            return;
-          }
-          texture = t;
-          t.colorSpace = T.SRGBColorSpace;
-          t.wrapS = T.RepeatWrapping;
-          t.wrapT = T.RepeatWrapping;
-          t.repeat.set(2, 2);
-          model.material.map = t;
-          model.material.color.set("#ffffff");
-          model.material.needsUpdate = true;
-        },
-        undefined,
-        () =>
-          setError("This print could not be loaded. Try uploading it again."),
-      );
-    }
+      textures: T.Texture[] = [];
+    designs.forEach((design, index) => {
+      if (design.texture) {
+        new T.TextureLoader().load(
+          design.texture,
+          (t) => {
+            if (stopped) {
+              t.dispose();
+              return;
+            }
+            textures.push(t);
+            t.colorSpace = T.SRGBColorSpace;
+            t.wrapS = T.RepeatWrapping;
+            t.wrapT = T.RepeatWrapping;
+            t.repeat.set(2, 2);
+            model.models[index].material.map = t;
+            model.models[index].material.color.set("#ffffff");
+            model.models[index].material.needsUpdate = true;
+          },
+          undefined,
+          () =>
+            setError("This print could not be loaded. Try uploading it again."),
+        );
+      }
+    });
     const relax = () => {
       if (stopped || !model.canDrape || frame++ > 55) return;
       for (const [index, part] of model.parts.entries()) {
-        part.cloth.step(model.collide);
-        surfaces[index].update(part.cloth.positions, model.collide);
+        if (!part.canDrape) continue;
+        part.cloth.step(part.collide);
+        surfaces[index].update(part.cloth.positions, part.collide);
         for (const { line, vertices } of part.trims) {
           const trim = line.geometry.getAttribute("position");
           vertices.forEach((v, i) =>
@@ -216,7 +219,7 @@ export default function AvatarViewer({
       stopped = true;
       cancelAnimationFrame(animation);
       rt.scene.remove(model.group);
-      texture?.dispose();
+      textures.forEach((t) => t.dispose());
       const materials = new Set<T.Material>();
       model.group.traverse((o) => {
         if (o instanceof T.Mesh || o instanceof T.Line) {
@@ -228,7 +231,7 @@ export default function AvatarViewer({
       });
       materials.forEach((m) => m.dispose());
     };
-  }, [measurements, design, pose, ready, drape]);
+  }, [measurements, designs, pose, ready, drape]);
   useEffect(() => {
     const rt = runtime.current;
     if (!rt) return;
