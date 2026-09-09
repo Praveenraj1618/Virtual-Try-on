@@ -296,7 +296,7 @@ export default function Studio() {
           }
         />
       </div>
-      <GarmentEditor design={design} onChange={setDesign} />
+
       <hr className="divider" />
       <div className="field-head">
         <span>Fabric behaviour</span>
@@ -317,7 +317,6 @@ export default function Studio() {
       <p className="subtle" style={{ fontSize: 12, marginTop: 9 }}>
         Illustrative fabric presets; not measured material properties.
       </p>
-      <MeasurementComparison measurements={measurements} design={design} />
     </>
   );
   return (
@@ -349,115 +348,7 @@ export default function Studio() {
           </button>
         </div>
       </header>
-      <div className="intro">
-        <div>
-          <div className="eyebrow">YOUR PERSONAL FITTING ROOM</div>
-          <h1>Make it yours.</h1>
-          <p className="subtle" style={{ margin: 0 }}>
-            Your proportions. Your designs. A new perspective.
-          </p>
-        </div>
-        <span className="badge">
-          <Rotate3D size={14} />
-          3D prototype
-        </span>
-      </div>
       <main className="workspace">
-        <section className="panel measure-panel" aria-label="Body measurements">
-          <div className="panel-title">
-            <h2>Your measurements</h2>
-            <Ruler />
-          </div>
-          <div className="field-head">
-            <span className="subtle">
-              {isSample ? "Sample measurements" : "Manual measurements"}
-            </span>
-            <Select value={units} onValueChange={setUnits}>
-              <SelectTrigger aria-label="Measurement units" size="sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="cm">cm</SelectItem>
-                <SelectItem value="in">in</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="measurements">
-            {measurementFields.map((f) => {
-              const factor = units === "in" ? 2.54 : 1;
-              return (
-                <div key={f.key} className="field">
-                  <div className="field-head">
-                    <label htmlFor={`measure-${f.key}`}>{f.label}</label>
-                    <input
-                      id={`measure-${f.key}`}
-                      type="number"
-                      min={Number((f.min / factor).toFixed(1))}
-                      max={Number((f.max / factor).toFixed(1))}
-                      step="0.1"
-                      value={Number((draft[f.key] / factor).toFixed(1))}
-                      onChange={(e) => {
-                        if (Number.isFinite(e.target.valueAsNumber))
-                          setMeasurement(
-                            f.key,
-                            Math.round(e.target.valueAsNumber * factor * 10) /
-                              10,
-                          );
-                      }}
-                      onBlur={() => {
-                        if (!measurementsSchema.safeParse(draft).success) {
-                          setDraft({ ...measurements });
-                          setMeasurementError("");
-                          toast.info(
-                            "Invalid measurements were restored to the last valid values.",
-                          );
-                        }
-                      }}
-                    />
-                  </div>
-                  <Slider
-                    aria-label={`${f.label} in centimetres`}
-                    min={f.min}
-                    max={f.max}
-                    step={1}
-                    value={[Math.max(f.min, Math.min(f.max, draft[f.key]))]}
-                    onValueChange={([v]) => setMeasurement(f.key, v)}
-                  />
-                </div>
-              );
-            })}
-          </div>
-          {measurementError && (
-            <p className="error" role="alert">
-              {measurementError} The preview shows your last valid measurements.
-            </p>
-          )}
-          <button className="button full" onClick={() => setGuide(true)}>
-            <Ruler />
-            How to measure
-          </button>
-          <hr className="divider" />
-          <div className="help">
-            <Info />
-            <span>
-              This is an approximate mannequin. For best results, use a tape
-              measure and wear fitted clothing.
-            </span>
-          </div>
-          <button
-            className="button quiet full"
-            style={{ marginTop: 10 }}
-            onClick={() => {
-              setMeasurements({ ...defaultMeasurements });
-              setDraft({ ...defaultMeasurements });
-              setMeasurementError("");
-              setIsSample(true);
-            }}
-          >
-            <RotateCcw />
-            Reset measurements
-          </button>
-        </section>
         <section className="stage" aria-label="3D fitting preview">
           <div className="stage-top">
             <div>
@@ -521,7 +412,7 @@ export default function Studio() {
         </section>
         <section className="panel garment-panel" aria-label="Garment designer">
           <div className="panel-title">
-            <h2>Your wardrobe</h2>
+            <h2>Fitting tools</h2>
             <SlidersHorizontal />
           </div>
           <Tabs
@@ -532,10 +423,121 @@ export default function Studio() {
             }}
           >
             <TabsList className="tabs-list">
-              <TabsTrigger value="garments">Garments</TabsTrigger>
-              <TabsTrigger value="design">Design</TabsTrigger>
+              <TabsTrigger value="body">Body</TabsTrigger>
+              <TabsTrigger value="garments">Clothes</TabsTrigger>
+              <TabsTrigger value="design">Upload</TabsTrigger>
+              <TabsTrigger value="pose">Pose</TabsTrigger>
+              <TabsTrigger value="fit">Size & fit</TabsTrigger>
               <TabsTrigger value="saved">Saved</TabsTrigger>
             </TabsList>
+            <TabsContent value="body">
+              <div className="panel-title">
+                <h2>Your measurements</h2>
+                <Ruler />
+              </div>
+              <div className="field-head">
+                <span className="subtle">
+                  {isSample ? "Sample measurements" : "Manual measurements"}
+                </span>
+                <Select value={units} onValueChange={setUnits}>
+                  <SelectTrigger aria-label="Measurement units" size="sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cm">cm</SelectItem>
+                    <SelectItem value="in">in</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="measurements">
+                {measurementFields.map((f) => {
+                  const factor = units === "in" ? 2.54 : 1;
+                  return (
+                    <div key={f.key} className="field">
+                      <div className="field-head">
+                        <label htmlFor={`measure-${f.key}`}>{f.label}</label>
+                        <input
+                          id={`measure-${f.key}`}
+                          type="number"
+                          min={Number((f.min / factor).toFixed(1))}
+                          max={Number((f.max / factor).toFixed(1))}
+                          step="0.1"
+                          value={Number((draft[f.key] / factor).toFixed(1))}
+                          onChange={(e) => {
+                            if (Number.isFinite(e.target.valueAsNumber))
+                              setMeasurement(
+                                f.key,
+                                Math.round(
+                                  e.target.valueAsNumber * factor * 10,
+                                ) / 10,
+                              );
+                          }}
+                          onBlur={() => {
+                            if (!measurementsSchema.safeParse(draft).success) {
+                              setDraft({ ...measurements });
+                              setMeasurementError("");
+                              toast.info(
+                                "Invalid measurements were restored to the last valid values.",
+                              );
+                            }
+                          }}
+                        />
+                      </div>
+                      <Slider
+                        aria-label={`${f.label} in centimetres`}
+                        min={f.min}
+                        max={f.max}
+                        step={1}
+                        value={[Math.max(f.min, Math.min(f.max, draft[f.key]))]}
+                        onValueChange={([v]) => setMeasurement(f.key, v)}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+              {measurementError && (
+                <p className="error" role="alert">
+                  {measurementError} The preview shows your last valid
+                  measurements.
+                </p>
+              )}
+              <button className="button full" onClick={() => setGuide(true)}>
+                <Ruler />
+                How to measure
+              </button>
+              <hr className="divider" />
+              <div className="help">
+                <Info />
+                <span>
+                  This is an approximate mannequin. For best results, use a tape
+                  measure and wear fitted clothing.
+                </span>
+              </div>
+              <button
+                className="button quiet full"
+                style={{ marginTop: 10 }}
+                onClick={() => {
+                  setMeasurements({ ...defaultMeasurements });
+                  setDraft({ ...defaultMeasurements });
+                  setMeasurementError("");
+                  setIsSample(true);
+                }}
+              >
+                <RotateCcw />
+                Reset measurements
+              </button>
+            </TabsContent>
+
+            <TabsContent value="pose">
+              <PoseEditor pose={pose} onChange={setPose} />
+            </TabsContent>
+            <TabsContent value="fit">
+              <GarmentEditor design={design} onChange={setDesign} />
+              <MeasurementComparison
+                measurements={measurements}
+                design={design}
+              />
+            </TabsContent>
             <TabsContent value="garments">
               <div className="eyebrow" style={{ marginBottom: 13 }}>
                 CHOOSE A TEMPLATE
@@ -572,7 +574,6 @@ export default function Studio() {
                 </button>
               ))}
               {designControls}
-              <PoseEditor pose={pose} onChange={setPose} />
               <hr className="divider" />
               <div className="help">
                 <Info />
@@ -584,105 +585,120 @@ export default function Studio() {
             </TabsContent>
             <TabsContent value="design">
               <p className="subtle" style={{ marginTop: 0 }}>
-                Start with a template, then bring your design into the fitting
-                room.
+                Turn a garment image into a shape, or add a fabric print.
               </p>
               {garmentSelect}
-              <hr className="divider" />
-              <div className="panel-title">
-                <h2>Fabric print</h2>
-                <Upload />
-              </div>
-              {design.texture && (
-                <>
-                  <img
-                    className="uploaded-image"
-                    src={design.texture}
-                    alt="Current garment print"
-                  />
+              <Tabs defaultValue="shape">
+                <TabsList className="upload-tabs">
+                  <TabsTrigger value="shape">Garment shape</TabsTrigger>
+                  <TabsTrigger value="print">Fabric print</TabsTrigger>
+                </TabsList>
+                <TabsContent value="shape">
+                  {" "}
+                  <h2 style={{ fontSize: 16, fontWeight: 600 }}>
+                    Design to 3D
+                  </h2>
+                  <p className="subtle">
+                    Upload a front-view dress or top. We’ll suggest the outline
+                    and estimate a size for your mannequin.
+                  </p>
+                  {design.reference && (
+                    <>
+                      <img
+                        className="uploaded-image reference-thumbnail"
+                        src={design.reference}
+                        alt="Your costume design reference"
+                      />
+                      <button
+                        className="button full"
+                        onClick={() => update("reference", "")}
+                      >
+                        Remove design
+                      </button>
+                    </>
+                  )}
+                  <label className="upload" style={{ padding: 12 }}>
+                    <span>Upload garment design</span>
+                    <input
+                      aria-label="Upload sketch reference"
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      disabled={uploading}
+                      onChange={(e) => {
+                        void upload(e.target.files?.[0], "reference");
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                  {design.reference && (
+                    <DesignTracer
+                      key={design.reference}
+                      design={design}
+                      measurements={measurements}
+                      onChange={setDesign}
+                    />
+                  )}
+                </TabsContent>
+                <TabsContent value="print">
+                  {" "}
+                  <hr className="divider" />
+                  <div className="panel-title">
+                    <h2>Fabric print</h2>
+                    <Upload />
+                  </div>
+                  {design.texture && (
+                    <>
+                      <img
+                        className="uploaded-image"
+                        src={design.texture}
+                        alt="Current garment print"
+                      />
+                      <button
+                        className="button full"
+                        onClick={() => update("texture", "")}
+                      >
+                        Remove print
+                      </button>
+                    </>
+                  )}
+                  <label className="upload">
+                    <Upload size={22} />
+                    <strong>
+                      {uploading ? "Uploading…" : "Upload your artwork"}
+                    </strong>
+                    <span className="subtle">Repeats across the garment</span>
+                    <input
+                      aria-label="Upload fabric print"
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      disabled={uploading}
+                      onChange={(e) => {
+                        void upload(e.target.files?.[0], "texture");
+                        e.target.value = "";
+                      }}
+                    />
+                    <small className="subtle">
+                      PNG, JPG, WebP · Up to 5 MB
+                    </small>
+                  </label>
                   <button
-                    className="button full"
-                    onClick={() => update("texture", "")}
+                    className="print-preset"
+                    onClick={() => update("texture", "/cobalt-stripe.webp")}
                   >
-                    Remove print
+                    <img
+                      src="/cobalt-stripe.webp"
+                      alt="Cobalt and ivory striped fabric"
+                    />
+                    <span>Try the cobalt stripe print</span>
                   </button>
-                </>
-              )}
-              <label className="upload">
-                <Upload size={22} />
-                <strong>
-                  {uploading ? "Uploading…" : "Upload your artwork"}
-                </strong>
-                <span className="subtle">Repeats across the garment</span>
-                <input
-                  aria-label="Upload fabric print"
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  disabled={uploading}
-                  onChange={(e) => {
-                    void upload(e.target.files?.[0], "texture");
-                    e.target.value = "";
-                  }}
-                />
-                <small className="subtle">PNG, JPG, WebP · Up to 5 MB</small>
-              </label>
-              <button
-                className="print-preset"
-                onClick={() => update("texture", "/cobalt-stripe.webp")}
-              >
-                <img
-                  src="/cobalt-stripe.webp"
-                  alt="Cobalt and ivory striped fabric"
-                />
-                <span>Try the cobalt stripe print</span>
-              </button>
-              <hr className="divider" />
-              <h2 style={{ fontSize: 16, fontWeight: 600 }}>Design to 3D</h2>
-              <p className="subtle">
-                Upload a front-view dress or top. Mark its outline to create a
-                wearable 3D shape, then refine its measurements.
-              </p>
-              {design.reference && (
-                <>
-                  <img
-                    className="uploaded-image"
-                    src={design.reference}
-                    alt="Your costume design reference"
-                  />
-                  <button
-                    className="button full"
-                    onClick={() => update("reference", "")}
-                  >
-                    Remove reference
-                  </button>
-                </>
-              )}
-              <label className="upload" style={{ padding: 12 }}>
-                <span>Add a reference image</span>
-                <input
-                  aria-label="Upload sketch reference"
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  disabled={uploading}
-                  onChange={(e) => {
-                    void upload(e.target.files?.[0], "reference");
-                    e.target.value = "";
-                  }}
-                />
-              </label>
-              {design.reference && (
-                <DesignTracer
-                  key={design.reference}
-                  design={design}
-                  onChange={setDesign}
-                />
-              )}
+                  <hr className="divider" />
+                </TabsContent>
+              </Tabs>
               {error && (
                 <p className="error" role="alert">
                   {error}
                 </p>
               )}
-              {designControls}
             </TabsContent>
             <TabsContent value="saved">
               <p className="subtle" style={{ marginTop: 0 }}>

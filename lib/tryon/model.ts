@@ -99,8 +99,12 @@ function segmentPoints(
   folds = 0,
 ) {
   const direction = end.clone().sub(start).normalize(),
-    u = new T.Vector3(0, 0, 1),
-    v = new T.Vector3().crossVectors(u, direction).normalize(),
+    seed =
+      Math.abs(direction.z) > 0.9
+        ? new T.Vector3(0, 1, 0)
+        : new T.Vector3(0, 0, 1),
+    v = new T.Vector3().crossVectors(seed, direction).normalize(),
+    u = new T.Vector3().crossVectors(direction, v).normalize(),
     pts: number[] = [];
   for (let row = 0; row < rows; row++) {
     const t = row / (rows - 1),
@@ -258,7 +262,9 @@ export function createMannequin(
       { start: s, end: elbow, r1: 0.054, r2: 0.037 },
       { start: elbow, end: wrist, r1: 0.039, r2: 0.026 },
     );
-    sphere(s.x, s.y, s.z, 0.058, 0.065, 0.058);
+    sphere(s.x, s.y, s.z, 0.058, 0.058, 0.058);
+    sphere(elbow.x, elbow.y, elbow.z, 0.039, 0.039, 0.039);
+    sphere(wrist.x, wrist.y, wrist.z, 0.027, 0.027, 0.027);
 
     sphere(
       wrist.x + side * 0.01,
@@ -269,13 +275,24 @@ export function createMannequin(
       0.021,
     );
   }
-  for (const pair of [
-    legs.slice(0, 2),
-    legs.slice(2),
-    arms.slice(0, 2),
-    arms.slice(2),
-  ])
+  for (const pair of [legs.slice(0, 2), legs.slice(2)])
     addBody(geometry(limbPoints(pair), 40, 42));
+  // Arm surfaces now follow the same straight segments and joint centres as collision.
+  for (const segment of arms)
+    addBody(
+      geometry(
+        segmentPoints(
+          segment.start,
+          segment.end,
+          segment.r1,
+          segment.r2,
+          24,
+          40,
+        ),
+        40,
+        24,
+      ),
+    );
   // Underwear keeps an unclothed mannequin neutral during garment changes.
   const base = new T.MeshStandardMaterial({
     color: "#8d958b",
@@ -337,13 +354,22 @@ export function createMannequin(
           ...(pts.slice(i * 3, i * 3 + 3) as [number, number, number]),
         );
         const side = bindings.get(i) ?? Math.sign(point.x);
+        const roots =
+          topology.loops[side > 0 ? 2 : d.garment.sleeveLength > 0 ? 4 : 3];
+        let distance = Infinity;
+        for (const v of roots)
+          distance = Math.min(
+            distance,
+            Math.hypot(
+              point.x - pts[v * 3],
+              point.y - pts[v * 3 + 1],
+              point.z - pts[v * 3 + 2],
+            ),
+          );
         const weight = bindings.has(i)
           ? 1
-          : T.MathUtils.smoothstep(
-              Math.abs(point.x),
-              gShoulder * 0.55,
-              gShoulder,
-            ) * T.MathUtils.smoothstep(point.y, anchor - 0.23, anchor - 0.04);
+          : 1 - T.MathUtils.smoothstep(distance, 0, 0.15);
+        cloth.attachment[i] = 0.004 + weight * 0.065;
         if (!weight) continue;
         const rig = armRig(
           side,
@@ -572,6 +598,7 @@ export function createMannequin(
           for (let k = 0; k < 3; k++) {
             part.cloth.positions[i * 3 + k] = p[k];
             part.cloth.previous[i * 3 + k] = p[k];
+            part.cloth.target[i * 3 + k] = p[k];
           }
         }
       (part.mesh.geometry.getAttribute("position").array as Float32Array).set(

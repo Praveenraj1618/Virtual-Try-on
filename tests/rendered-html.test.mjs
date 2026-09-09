@@ -101,9 +101,9 @@ test("worker renders the fitting workspace", async () => {
   );
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /Your measurements/);
-  assert.match(html, /Your wardrobe/);
-  assert.match(html, /Sample measurements/);
+  assert.match(html, /Fitting tools/);
+  assert.match(html, /Size &amp; fit|Size & fit/);
+  assert.match(html, /3D fitting preview/);
   assert.doesNotMatch(html, /Starter Project/);
 });
 test("saved measurements are validated and isolated by owner", async () => {

@@ -104,3 +104,81 @@ export function traceToDesign(
     );
   return result.data;
 }
+
+/** Stylised drawings supply relative shape; body measurements supply approximate scale. */
+export function estimateDesign(
+  points: TracePoint[],
+  body: import("./schema").Measurements,
+  design: Design,
+  ending: "hip" | "knee" | "ankle",
+  sleeveless: boolean,
+): Design {
+  if (
+    points.length !== 8 ||
+    points.some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y))
+  )
+    throw new Error("Select a clear garment image first.");
+  const [neck, shoulder, chest, waist, hip, hem, outer, inner] = points;
+  if (
+    !(
+      shoulder.y < chest.y &&
+      chest.y < waist.y &&
+      waist.y < hip.y &&
+      hip.y < hem.y
+    )
+  )
+    throw new Error(
+      "Move the numbered dots so they run from shoulder down to the bottom edge in order.",
+    );
+  const width = chest.x - neck.x;
+  if (width < 2 || [shoulder, waist, hip, hem].some((p) => p.x - neck.x < 2))
+    throw new Error(
+      "Place the centre dot at the middle of the neckline, and the other dots on the right-hand edge.",
+    );
+  const clamp = (v: number, min: number, max: number) =>
+    Math.round(Math.max(min, Math.min(max, v)) * 10) / 10;
+  const length = clamp(
+      body.height * { hip: 0.37, knee: 0.59, ankle: 0.77 }[ending],
+      35,
+      145,
+    ),
+    chestSize = body.chest + 10,
+    h = hem.y - shoulder.y;
+  const level = (y: number, min: number, max: number) =>
+    Math.max(min, Math.min(max, (y - shoulder.y) / h));
+  return designSchema.parse({
+    ...design,
+    texture: "",
+    kind: ending === "hip" ? "tshirt" : "dress",
+    garment: {
+      ...design.garment,
+      length,
+      chest: clamp(chestSize, 60, 180),
+      shoulders: clamp(body.shoulders + 3, 28, 65),
+      waist: clamp(
+        (chestSize * (waist.x - neck.x)) / width,
+        body.waist + 8,
+        170,
+      ),
+      hips: clamp((chestSize * (hip.x - neck.x)) / width, body.hips + 8, 185),
+      sleeveLength: sleeveless
+        ? 0
+        : clamp(
+            (Math.abs((outer.y + inner.y) / 2 - shoulder.y) / h) * length,
+            10,
+            Math.min(75, body.arm),
+          ),
+    },
+    tracedShape: {
+      chestAt: level(chest.y, 0.08, 0.4),
+      waistAt: level(waist.y, 0.42, 0.6),
+      hipAt: level(hip.y, 0.62, 0.88),
+      hemCircumference: clamp(
+        (chestSize * (hem.x - neck.x)) / width,
+        body.hips + 8,
+        250,
+      ),
+      neckDepth: clamp(((neck.y - shoulder.y) / h) * length, 1, 18),
+    },
+  });
+}

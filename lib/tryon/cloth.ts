@@ -11,6 +11,7 @@ export class Cloth {
   count: number;
   anchors: Float32Array;
   target: Float32Array;
+  attachment: Float32Array;
   constructor(
     points: number[],
     public columns: number,
@@ -24,6 +25,7 @@ export class Cloth {
     this.target = this.positions.slice();
     this.anchors = this.positions.slice();
     this.count = points.length / 3;
+    this.attachment = new Float32Array(this.count).fill(0.004);
     this.pinned = new Set(Array.from({ length: columns }, (_, i) => i));
     const connect = (a: number, b: number, k: number) => {
       const i = a * 3,
@@ -123,7 +125,7 @@ export class Cloth {
         const i = a * 3;
         // Gentle attachment to the tailored rest shape keeps this preview stable.
         for (let k = 0; k < 3; k++)
-          p[i + k] += (this.target[i + k] - p[i + k]) * 0.004;
+          p[i + k] += (this.target[i + k] - p[i + k]) * this.attachment[a];
         const v = collide([p[i], p[i + 1], p[i + 2]]);
         p[i] = v[0];
         p[i + 1] = Math.max(0.035, v[1]);

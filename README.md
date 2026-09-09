@@ -13,7 +13,7 @@ A working 3D fitting-studio prototype: enter body measurements, customise a garm
 - **Connected shoulders and collision-aware neckline:** upper garments use a single connected surface; sleeve roots share bodice vertices and neckline anchors are projected outside the collision envelope before rendering. Garment rest dimensions remain unchanged.
 - **Refined mannequin and detailing:** continuous limb surfaces, a tapered jaw, ears, and garment neckline/cuff/side-seam guides that follow the cloth.
 - **Basic cloth relaxation:** positional constraints, gravity, body collision and illustrative cotton/denim/silk presets.
-- **Design uploads:** repeat PNG/JPEG/WebP artwork, or mark a front-view design with eight landmarks to generate a symmetric 3D garment. Shoulder-to-hem length calibrates scale; the trace controls chest, waist, hips, hem, neckline depth and sleeve length.
+- **Design uploads:** repeat PNG/JPEG/WebP artwork, or automatically suggest outline landmarks from a front-view sketch/photo using local contrast, background segmentation and connected components. Review or drag the points, then generate a symmetric garment. Default estimated sizing uses mannequin measurements and hip/knee/ankle endings; a known garment length remains optional.
 - **Articulated arms:** independent shoulder lift, forward/backward motion and elbow bend, with relaxed, arms-out and wave presets. Posed cloth targets and collision capsules follow the limbs.
 - **Private saved looks:** measurements, design choices and uploaded assets persist on the server and are scoped to the signed-in user.
 - **PNG preview export** from the current 3D view.
@@ -31,7 +31,7 @@ This is a visual prototype, not a body-scanning or certified garment-fit system.
 - Positive measurement differences do not establish comfort, correct fit, or that a garment can be put on. Closures, stretch, unmeasured limb circumferences and construction affect real fit.
 - The cloth solver is a small position-based relaxation model with pinned vertices, structural/shear/bending constraints and approximate collision. It is not a calibrated textile solver. Overlaps, seam artefacts and unusual body/garment combinations can produce imperfect previews.
 - Fabric labels select illustrative stiffness and shading presets; they do not represent measured material properties.
-- A print upload changes the surface artwork. Design-to-3D is **guided landmark reconstruction**, not automatic AI conversion. The user marks a front-view outline and supplies a real length. It generates wearable geometry, with an estimated elliptical depth and mirrored back; no sewing patterns, hidden seams, asymmetric layers, ruffles or cut-outs are reconstructed.
+- A print upload changes the surface artwork. Design-to-3D uses **automatic image-processing suggestions with editable landmarks**, not an AI model. Default sizes are estimated from the mannequin; the image alone cannot provide exact real-world measurements. It generates wearable geometry, with an estimated elliptical depth and mirrored back; no sewing patterns, hidden seams, asymmetric layers, ruffles or cut-outs are reconstructed.
 - Camera measurement, arbitrary sewing-pattern import, learned body reconstruction and physically validated fit prediction are future stages.
 - Garment settings support the provided templates; this is not a sewing-pattern editor. T-shirt and dress sleeves share mesh vertices with their armholes, preventing disconnected shoulder seams. This is procedural connected geometry, not sewing-pattern reconstruction. Seam lines are visual guides.
 - First-version saved looks are upgraded on read using their original saved measurements and settings. New looks store explicit garment dimensions. Existing database rows and migrations are not rewritten.
@@ -137,3 +137,9 @@ public/              Built-in textile print and favicon
 ## Assets and third-party software
 
 The built-in cobalt stripe print was generated for this project. The mannequin and garment geometry are authored procedurally; there are no external body-model weights or fashion datasets in the repository. Third-party dependencies retain their respective licences. Review model and dataset licences before adding research implementations or commercial inference services.
+
+## V5 workspace and rendering
+
+The mannequin stays visible beside a single tabbed tool panel (Body, Clothes, Upload, Pose, Size & fit, Saved). Mobile uses a split canvas/control layout. Design conversion opens in a larger dialog with draggable points, automatic sketch/photo detection and estimated sizing by default. Detector failures explain how to crop or adjust the outline; there are no AI API credentials or remote image-analysis calls. It works best with a single centred garment on a plain background. Layered sketches, people, complex backgrounds and disconnected strokes can mislead the detector and require corrections.
+
+The rendered cloth uses shared midpoint subdivision (four triangles per simulation triangle) with collision projection at the added vertices. Simulation stays at its original resolution. Arm rendering follows the same segment axes as collision; shoulder influence blends continuously into the bodice and sleeve attachment is stronger. This reduces coarse-face penetration and posing distortion, but does not add self-collision or calibrated cloth physics. Severe poses can still produce folds/intersections. Browser visual testing has not been performed.

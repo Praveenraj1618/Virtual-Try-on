@@ -1,33 +1,70 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  traceLabels,
+  Select,
+  SelectTrigger,
+  SelectContent,
+  SelectValue,
+  SelectItem,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
   initialTrace,
   traceToDesign,
+  estimateDesign,
   type TracePoint,
 } from "@/lib/tryon/design-trace";
-import type { Design } from "@/lib/tryon/schema";
+import { detectOutline } from "@/lib/tryon/outline-detection";
+import type { Design, Measurements } from "@/lib/tryon/schema";
+const labels = [
+  "Neck centre",
+  "Shoulder",
+  "Chest edge",
+  "Waist edge",
+  "Hip edge",
+  "Bottom edge",
+  "Sleeve outside",
+  "Sleeve inside",
+];
 export function DesignTracer({
   design,
+  measurements,
   onChange,
 }: {
   design: Design;
+  measurements: Measurements;
   onChange: (d: Design) => void;
 }) {
-  const [points, setPoints] = useState<TracePoint[]>(
-    initialTrace.map((p) => ({ ...p })),
-  );
-  const [selected, setSelected] = useState(0),
+  const [open, setOpen] = useState(false),
+    [points, setPoints] = useState<TracePoint[]>(
+      initialTrace.map((p) => ({ ...p })),
+    ),
+    [selected, setSelected] = useState(0),
     [aspect, setAspect] = useState(0),
     [length, setLength] = useState(design.garment.length),
     [sleeveless, setSleeveless] = useState(false),
     [message, setMessage] = useState(""),
-    [generated, setGenerated] = useState(false);
-  const move = (x: number, y: number) => {
+    [error, setError] = useState(""),
+    [sizing, setSizing] = useState("estimate"),
+    [ending, setEnding] = useState<"hip" | "knee" | "ankle">(
+      design.kind === "tshirt" ? "hip" : "knee",
+    ),
+    [mode, setMode] = useState<"sketch" | "photo">("sketch"),
+    [detecting, setDetecting] = useState(false);
+  const image = useRef<HTMLImageElement>(null),
+    detected = useRef(false),
+    drag = useRef<number | null>(null);
+  const updatePoint = (index: number, x: number, y: number) => {
     setPoints((p) =>
       p.map((v, i) =>
-        i === selected
+        i === index
           ? {
               x: Math.max(0, Math.min(100, x)),
               y: Math.max(0, Math.min(100, y)),
@@ -35,188 +72,343 @@ export function DesignTracer({
           : v,
       ),
     );
-    setGenerated(false);
-    setMessage("");
+    setError("");
   };
+  async function detect() {
+    if (!image.current?.naturalWidth) return;
+    setDetecting(true);
+    setError("");
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      const img = image.current;
+      if (!img) return;
+      const scale = Math.min(
+        1,
+        320 / Math.max(img.naturalWidth, img.naturalHeight),
+      );
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.naturalWidth * scale);
+      canvas.height = Math.round(img.naturalHeight * scale);
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx)
+        throw new Error(
+          "Image analysis is unavailable in this browser. You can still move the points.",
+        );
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const result = detectOutline(
+        ctx.getImageData(0, 0, canvas.width, canvas.height).data,
+        canvas.width,
+        canvas.height,
+        mode,
+      );
+      setPoints(result.points);
+      setMessage(result.message);
+    } catch (e) {
+      setError((e as Error).message);
+      setMessage(
+        "Automatic detection needs help. Move the points below before generating.",
+      );
+    } finally {
+      setDetecting(false);
+    }
+  }
   return (
-    <section aria-label="Trace design into 3D" style={{ marginTop: 16 }}>
-      <p className="subtle">
-        Use a straight front view of one dress or top. Choose a point below,
-        then click its location on the image’s right half. The other half and
-        back are mirrored approximations.
-      </p>
-      <div style={{ position: "relative", background: "white" }}>
-        <img
-          src={design.reference}
-          alt="Garment design with editable outline landmarks"
-          style={{ display: "block", width: "100%" }}
-          onLoad={(e) =>
-            setAspect(
-              e.currentTarget.naturalWidth / e.currentTarget.naturalHeight,
-            )
-          }
-          onError={() => {
-            setAspect(0);
-            setMessage("Image could not load. Upload the design again.");
-          }}
-        />
-        <svg
-          viewBox="0 0 100 100"
-          preserveAspectRatio="none"
-          style={{
-            position: "absolute",
-            inset: 0,
-            width: "100%",
-            height: "100%",
-            touchAction: "none",
-          }}
-          role="application"
-          aria-label={`Place ${traceLabels[selected]}. Use arrow keys to fine-tune.`}
-          tabIndex={0}
-          onPointerDown={(e) => {
-            const b = e.currentTarget.getBoundingClientRect();
-            move(
-              ((e.clientX - b.left) / b.width) * 100,
-              ((e.clientY - b.top) / b.height) * 100,
-            );
-          }}
-          onKeyDown={(e) => {
-            const delta = e.shiftKey ? 2 : 0.5;
-            const p = points[selected];
-            if (
-              ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(
-                e.key,
-              )
-            ) {
-              e.preventDefault();
-              move(
-                p.x +
-                  (e.key === "ArrowLeft"
-                    ? -delta
-                    : e.key === "ArrowRight"
-                      ? delta
-                      : 0),
-                p.y +
-                  (e.key === "ArrowUp"
-                    ? -delta
-                    : e.key === "ArrowDown"
-                      ? delta
-                      : 0),
-              );
-            }
-          }}
-        >
-          <polyline
-            points={points
-              .slice(1, 6)
-              .map((p) => `${p.x},${p.y}`)
-              .join(" ")}
-            fill="none"
-            stroke="#d72f77"
-            strokeWidth="0.7"
-          />
-          {points.slice(0, sleeveless ? 6 : 8).map((p, i) => (
-            <g key={i}>
-              <circle
-                cx={p.x}
-                cy={p.y}
-                r={i === selected ? 2 : 1.4}
-                fill={i === selected ? "#ffce3a" : "#d72f77"}
-                stroke="white"
-                strokeWidth=".5"
-              />
-              <text
-                x={p.x + 2}
-                y={p.y - 1}
-                fontSize="4"
-                fill="#151515"
-                stroke="white"
-                strokeWidth=".2"
-                paintOrder="stroke"
-              >
-                {i + 1}
-              </text>
-            </g>
-          ))}
-        </svg>
-      </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
-        {traceLabels.slice(0, sleeveless ? 6 : 8).map((label, i) => (
-          <button
-            key={label}
-            className={`button ${selected === i ? "primary" : ""}`}
-            aria-pressed={selected === i}
-            onClick={() => setSelected(i)}
-          >
-            {i + 1}. {label}
-          </button>
-        ))}
-      </div>
-      <label className="field-head" style={{ marginTop: 16 }}>
-        Shoulder-to-hem length (cm)
-        <input
-          aria-label="Design shoulder-to-hem length"
-          type="number"
-          min={35}
-          max={145}
-          value={length}
-          onChange={(e) => {
-            setLength(Number(e.target.value));
-            setGenerated(false);
-          }}
-          style={{ width: 70 }}
-        />
-      </label>
-      <label style={{ display: "flex", gap: 8, margin: "12px 0" }}>
-        <Checkbox
-          checked={sleeveless}
-          onCheckedChange={(v) => {
-            setSleeveless(v === true);
-            setSelected(0);
-            setGenerated(false);
-          }}
-        />
-        Sleeveless design
-      </label>
-      <button
-        className="button primary full"
-        disabled={!aspect}
-        onClick={() => {
-          try {
-            onChange(traceToDesign(points, aspect, length, sleeveless, design));
-            setGenerated(true);
-            setMessage(
-              "3D shape created. Review its dimensions and fit below; save the look to keep it.",
-            );
-          } catch (e) {
-            setGenerated(false);
-            setMessage((e as Error).message);
-          }
-        }}
-      >
-        Generate 3D garment
+    <>
+      <button className="button primary full" onClick={() => setOpen(true)}>
+        Create 3D from this design
       </button>
-      {message && (
-        <p
-          role={generated ? "status" : "alert"}
-          className={generated ? "subtle" : "error"}
-        >
-          {message}
-        </p>
-      )}
       <p className="subtle">
-        Guided reconstruction, not automatic AI conversion. Produces a symmetric
-        garment mesh; ruffles, cut-outs, layers and hidden seams need further
-        modelling. Fabric thickness and depth are estimated.
+        Automatic outline suggestions · No tape measure needed
       </p>
-      {design.tracedShape && (
-        <button
-          className="button full"
-          onClick={() => onChange({ ...design, tracedShape: undefined })}
-        >
-          Use template outline again
-        </button>
-      )}
-    </section>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="design-dialog">
+          <DialogHeader>
+            <DialogTitle>Turn your design into a garment</DialogTitle>
+            <DialogDescription>
+              Detect the outline, choose where it ends, then try it on. Works
+              best with one front-view garment on a plain background.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="trace-workspace">
+            <div className="trace-image-area">
+              <div className="trace-image-frame">
+                <img
+                  ref={image}
+                  src={design.reference}
+                  alt="Uploaded design with adjustable outline points"
+                  onLoad={(e) => {
+                    setAspect(
+                      e.currentTarget.naturalWidth /
+                        e.currentTarget.naturalHeight,
+                    );
+                    if (!detected.current) {
+                      detected.current = true;
+                      void detect();
+                    }
+                  }}
+                  onError={() => {
+                    setAspect(0);
+                    setError(
+                      "The design image could not load. Upload it again.",
+                    );
+                  }}
+                />
+                <svg
+                  viewBox="0 0 100 100"
+                  preserveAspectRatio="none"
+                  className="trace-overlay"
+                  role="application"
+                  tabIndex={0}
+                  aria-label={`Adjust ${labels[selected]} with arrow keys, or drag its dot`}
+                  onPointerDown={(e) => {
+                    const b = e.currentTarget.getBoundingClientRect(),
+                      x = ((e.clientX - b.left) / b.width) * 100,
+                      y = ((e.clientY - b.top) / b.height) * 100;
+                    let nearest = selected;
+                    let distance = 9;
+                    points.slice(0, sleeveless ? 6 : 8).forEach((p, i) => {
+                      const d = Math.hypot(p.x - x, p.y - y);
+                      if (d < distance) {
+                        distance = d;
+                        nearest = i;
+                      }
+                    });
+                    setSelected(nearest);
+                    drag.current = nearest;
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                    updatePoint(nearest, x, y);
+                  }}
+                  onPointerMove={(e) => {
+                    if (drag.current === null) return;
+                    const b = e.currentTarget.getBoundingClientRect();
+                    updatePoint(
+                      drag.current,
+                      ((e.clientX - b.left) / b.width) * 100,
+                      ((e.clientY - b.top) / b.height) * 100,
+                    );
+                  }}
+                  onPointerUp={() => {
+                    drag.current = null;
+                  }}
+                  onPointerCancel={() => {
+                    drag.current = null;
+                  }}
+                  onKeyDown={(e) => {
+                    if (!e.key.startsWith("Arrow")) return;
+                    e.preventDefault();
+                    const p = points[selected],
+                      d = e.shiftKey ? 2 : 0.5;
+                    updatePoint(
+                      selected,
+                      p.x +
+                        (e.key === "ArrowLeft"
+                          ? -d
+                          : e.key === "ArrowRight"
+                            ? d
+                            : 0),
+                      p.y +
+                        (e.key === "ArrowUp"
+                          ? -d
+                          : e.key === "ArrowDown"
+                            ? d
+                            : 0),
+                    );
+                  }}
+                >
+                  <polyline
+                    points={points
+                      .slice(1, 6)
+                      .map((p) => `${p.x},${p.y}`)
+                      .join(" ")}
+                    fill="none"
+                    stroke="#d72f77"
+                    strokeWidth=".6"
+                  />
+                  {points.slice(0, sleeveless ? 6 : 8).map((p, i) => (
+                    <g key={i}>
+                      <circle
+                        cx={p.x}
+                        cy={p.y}
+                        r={selected === i ? 1.7 : 1.3}
+                        fill={selected === i ? "#ffce3a" : "#d72f77"}
+                        stroke="white"
+                        strokeWidth=".4"
+                      />
+                      <text
+                        x={p.x + 1.8}
+                        y={p.y - 1}
+                        fontSize="3"
+                        fill="#111"
+                        stroke="white"
+                        strokeWidth=".3"
+                        paintOrder="stroke"
+                      >
+                        {i + 1}
+                      </text>
+                    </g>
+                  ))}
+                </svg>
+              </div>
+            </div>
+            <div className="trace-options">
+              <h3>1. Find the outline</h3>
+              <div className="trace-detect-row">
+                <Select
+                  value={mode}
+                  onValueChange={(v) => setMode(v as typeof mode)}
+                >
+                  <SelectTrigger aria-label="Image type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="sketch">Pencil / sketch</SelectItem>
+                    <SelectItem value="photo">Garment photo</SelectItem>
+                  </SelectContent>
+                </Select>
+                <button
+                  className="button"
+                  disabled={detecting || !aspect}
+                  onClick={() => void detect()}
+                >
+                  {detecting ? "Detecting…" : "Detect again"}
+                </button>
+              </div>
+              <p className="subtle" role="status">
+                {message || "Finding the garment edges…"}
+              </p>
+              <div className="trace-point-picker">
+                {labels.slice(0, sleeveless ? 6 : 8).map((label, i) => (
+                  <button
+                    key={label}
+                    className={`button ${selected === i ? "primary" : ""}`}
+                    aria-label={label}
+                    aria-pressed={selected === i}
+                    onClick={() => setSelected(i)}
+                  >
+                    {i + 1}
+                  </button>
+                ))}
+              </div>
+              <p className="subtle">
+                <strong>
+                  {selected + 1}. {labels[selected]}
+                </strong>{" "}
+                · Drag a dot to correct it.
+              </p>
+              <label className="trace-check">
+                <Checkbox
+                  checked={sleeveless}
+                  onCheckedChange={(v) => {
+                    setSleeveless(v === true);
+                    setSelected(0);
+                  }}
+                />
+                No sleeves
+              </label>
+              <h3>2. Choose the size</h3>
+              <Select value={sizing} onValueChange={setSizing}>
+                <SelectTrigger aria-label="Sizing method">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="estimate">
+                    Estimate for this mannequin
+                  </SelectItem>
+                  <SelectItem value="measured">
+                    I know the garment’s length
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              {sizing === "estimate" ? (
+                <>
+                  <label className="field-head" style={{ marginTop: 12 }}>
+                    Where should it end?
+                  </label>
+                  <Select
+                    value={ending}
+                    onValueChange={(v) => setEnding(v as typeof ending)}
+                  >
+                    <SelectTrigger aria-label="Garment ending">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="hip">At the hips · Top</SelectItem>
+                      <SelectItem value="knee">At the knees · Dress</SelectItem>
+                      <SelectItem value="ankle">
+                        At the ankles · Long dress
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="subtle">
+                    Uses the mannequin’s proportions with room to move. These
+                    are estimated sizes, not measurements from the image.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <label className="field-head" style={{ marginTop: 12 }}>
+                    Top of shoulder to bottom edge{" "}
+                    <input
+                      type="number"
+                      min={35}
+                      max={145}
+                      value={length}
+                      aria-label="Garment length in centimetres"
+                      onChange={(e) => setLength(Number(e.target.value))}
+                      style={{ width: 72 }}
+                    />{" "}
+                    cm
+                  </label>
+                  <p className="subtle">
+                    Lay the garment flat. Measure from its highest shoulder
+                    point straight down to its bottom edge. If unsure, switch to
+                    estimated sizing.
+                  </p>
+                </>
+              )}
+              {error && (
+                <p className="error" role="alert">
+                  {error}
+                </p>
+              )}
+              <button
+                className="button primary full"
+                disabled={detecting || !aspect}
+                onClick={() => {
+                  try {
+                    const next =
+                      sizing === "estimate"
+                        ? estimateDesign(
+                            points,
+                            measurements,
+                            design,
+                            ending,
+                            sleeveless,
+                          )
+                        : traceToDesign(
+                            points,
+                            aspect,
+                            length,
+                            sleeveless,
+                            design,
+                          );
+                    onChange(next);
+                    setOpen(false);
+                  } catch (e) {
+                    setError((e as Error).message);
+                  }
+                }}
+              >
+                Generate & try on
+              </button>
+              <p className="subtle">
+                Creates an approximate symmetric shape. Layers, decorations and
+                hidden seams are not reconstructed.
+              </p>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

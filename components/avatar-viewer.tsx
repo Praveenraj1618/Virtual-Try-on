@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as T from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { createRenderSurface } from "@/lib/tryon/render-surface";
 import { createMannequin } from "@/lib/tryon/model";
 import type { Measurements, Design } from "@/lib/tryon/schema";
 import type { Pose } from "@/lib/tryon/pose";
@@ -151,6 +152,17 @@ export default function AvatarViewer({
     if (!rt || !ready) return;
     setError("");
     const model = createMannequin(measurements, design, pose);
+    const surfaces = model.parts.map((part) => {
+      const source = part.mesh.geometry;
+      const surface = createRenderSurface(source);
+      part.mesh.geometry = surface.geometry;
+      source.dispose();
+      surface.update(
+        part.cloth.positions,
+        model.canDrape ? model.collide : undefined,
+      );
+      return surface;
+    });
     rt.scene.add(model.group);
     let stopped = false,
       frame = 0,
@@ -180,12 +192,9 @@ export default function AvatarViewer({
     }
     const relax = () => {
       if (stopped || !model.canDrape || frame++ > 55) return;
-      for (const part of model.parts) {
+      for (const [index, part] of model.parts.entries()) {
         part.cloth.step(model.collide);
-        const attr = part.mesh.geometry.getAttribute("position");
-        (attr.array as Float32Array).set(part.cloth.positions);
-        attr.needsUpdate = true;
-        part.mesh.geometry.computeVertexNormals();
+        surfaces[index].update(part.cloth.positions, model.collide);
         for (const { line, vertices } of part.trims) {
           const trim = line.geometry.getAttribute("position");
           vertices.forEach((v, i) =>
