@@ -56,6 +56,9 @@ import {
 } from "@/lib/tryon/schema";
 import { GarmentEditor, MeasurementComparison } from "./garment-editor";
 import { templateDimensions, canDrapeGarment } from "@/lib/tryon/schema";
+import { PoseEditor } from "./pose-editor";
+import { DesignTracer } from "./design-tracer";
+import { neutralPose, type Pose } from "@/lib/tryon/pose";
 const AvatarViewer = dynamic(() => import("./avatar-viewer"), {
   ssr: false,
   loading: () => <div className="fallback subtle">Loading the 3D studio…</div>,
@@ -80,6 +83,7 @@ export default function Studio() {
     }),
     [draft, setDraft] = useState<Measurements>({ ...defaultMeasurements }),
     [design, setDesign] = useState<Design>({ ...defaultDesign });
+  const [pose, setPose] = useState<Pose>(neutralPose);
   const [units, setUnits] = useState("cm"),
     [tab, setTab] = useState("garments"),
     [view, setView] = useState("angle"),
@@ -159,7 +163,7 @@ export default function Studio() {
       toast.success(
         kind === "texture"
           ? "Print applied to your garment."
-          : "Reference added. Adjust the template to match your design.",
+          : "Design added. Mark the outline below to generate its 3D shape.",
       );
     } catch (e) {
       setError((e as Error).message);
@@ -236,6 +240,7 @@ export default function Studio() {
     setDesign((d) => ({
       ...d,
       kind,
+      tracedShape: undefined,
       garment: { ...templateDimensions[kind] },
       neckline: "crew",
       silhouette: kind === "dress" ? "flared" : "straight",
@@ -468,6 +473,7 @@ export default function Studio() {
           </div>
           <AvatarViewer
             measurements={measurements}
+            pose={pose}
             design={design}
             view={view}
             turn={turn}
@@ -566,6 +572,7 @@ export default function Studio() {
                 </button>
               ))}
               {designControls}
+              <PoseEditor pose={pose} onChange={setPose} />
               <hr className="divider" />
               <div className="help">
                 <Info />
@@ -630,13 +637,10 @@ export default function Studio() {
                 <span>Try the cobalt stripe print</span>
               </button>
               <hr className="divider" />
-              <h2 style={{ fontSize: 16, fontWeight: 600 }}>
-                Sketch reference
-              </h2>
+              <h2 style={{ fontSize: 16, fontWeight: 600 }}>Design to 3D</h2>
               <p className="subtle">
-                Upload a sketch as a reference, then use the controls below to
-                recreate its shape. This does not automatically create a 3D
-                garment.
+                Upload a front-view dress or top. Mark its outline to create a
+                wearable 3D shape, then refine its measurements.
               </p>
               {design.reference && (
                 <>
@@ -666,13 +670,13 @@ export default function Studio() {
                   }}
                 />
               </label>
-              <div className="help">
-                <Info />
-                <span>
-                  Sketches are reference images in this version. Pattern pieces
-                  and seams are not generated automatically.
-                </span>
-              </div>
+              {design.reference && (
+                <DesignTracer
+                  key={design.reference}
+                  design={design}
+                  onChange={setDesign}
+                />
+              )}
               {error && (
                 <p className="error" role="alert">
                   {error}

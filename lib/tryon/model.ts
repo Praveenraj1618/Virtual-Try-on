@@ -2,6 +2,7 @@ import * as T from "three";
 import { Cloth, type Vec3 } from "./cloth";
 import { connectedUpperGarment } from "./upper-garment";
 import { canDrapeGarment, type Measurements, type Design } from "./schema";
+import { armRig, neutralPose, type Pose } from "./pose";
 type Ring = { y: number; a: number; b: number };
 type Capsule = { start: T.Vector3; end: T.Vector3; r1: number; r2: number };
 export type GarmentPart = {
@@ -134,8 +135,12 @@ function limbPoints(segments: Capsule[], rows = 42, columns = 40) {
     const t = row / (rows - 1),
       center = curve.getPoint(t),
       axis = curve.getTangent(t),
-      forward = new T.Vector3(0, 0, 1),
-      side = new T.Vector3().crossVectors(forward, axis).normalize();
+      seed =
+        Math.abs(axis.z) > 0.9
+          ? new T.Vector3(0, 1, 0)
+          : new T.Vector3(0, 0, 1),
+      side = new T.Vector3().crossVectors(seed, axis).normalize(),
+      forward = new T.Vector3().crossVectors(axis, side).normalize();
     const f = t * 4,
       i = Math.min(3, Math.floor(f)),
       u = f - i,
@@ -151,7 +156,11 @@ function limbPoints(segments: Capsule[], rows = 42, columns = 40) {
   }
   return points;
 }
-export function createMannequin(m: Measurements, d: Design) {
+export function createMannequin(
+  m: Measurements,
+  d: Design,
+  pose: Pose = neutralPose,
+) {
   const group = new T.Group(),
     body = new T.Group(),
     garments = new T.Group();
@@ -235,24 +244,30 @@ export function createMannequin(m: Measurements, d: Design) {
     );
 
     sphere(ankle.x, 0.05, 0.058, 0.043, 0.046, 0.1);
-    const s = new T.Vector3(side * (shoulderX - 0.015), shoulder - 0.025, 0),
-      elbow = new T.Vector3(
-        side * (shoulderX + 0.105),
-        shoulder - 0.025 - arm * 0.5,
-        0,
-      ),
-      wrist = new T.Vector3(
-        side * (shoulderX + 0.18),
-        shoulder - 0.025 - arm,
-        0,
-      );
+    const rig = armRig(
+      side,
+      shoulderX,
+      shoulder,
+      arm,
+      side < 0 ? pose.right : pose.left,
+    );
+    const s = rig.shoulder,
+      elbow = rig.elbow,
+      wrist = rig.wrist;
     arms.push(
       { start: s, end: elbow, r1: 0.054, r2: 0.037 },
       { start: elbow, end: wrist, r1: 0.039, r2: 0.026 },
     );
-    sphere(s.x, s.y, 0, 0.058, 0.065, 0.058);
+    sphere(s.x, s.y, s.z, 0.058, 0.065, 0.058);
 
-    sphere(wrist.x + side * 0.01, wrist.y - 0.055, 0.004, 0.033, 0.065, 0.021);
+    sphere(
+      wrist.x + side * 0.01,
+      wrist.y - 0.035,
+      wrist.z,
+      0.033,
+      0.065,
+      0.021,
+    );
   }
   for (const pair of [
     legs.slice(0, 2),
@@ -313,10 +328,45 @@ export function createMannequin(m: Measurements, d: Design) {
     topology?: ReturnType<typeof connectedUpperGarment>,
   ) => {
     const cloth = new Cloth(pts, cols, rows, stiffness, topology);
+    if (topology) {
+      const bindings = new Map(
+        topology.sleeveVertices.map((v) => [v.vertex, v.side]),
+      );
+      for (let i = 0; i < cloth.count; i++) {
+        const point = new T.Vector3(
+          ...(pts.slice(i * 3, i * 3 + 3) as [number, number, number]),
+        );
+        const side = bindings.get(i) ?? Math.sign(point.x);
+        const weight = bindings.has(i)
+          ? 1
+          : T.MathUtils.smoothstep(
+              Math.abs(point.x),
+              gShoulder * 0.55,
+              gShoulder,
+            ) * T.MathUtils.smoothstep(point.y, anchor - 0.23, anchor - 0.04);
+        if (!weight) continue;
+        const rig = armRig(
+          side,
+          gShoulder,
+          shoulder,
+          arm,
+          side < 0 ? pose.right : pose.left,
+        );
+        const posed = point.clone().lerp(rig.transform(point), weight);
+        for (let k = 0; k < 3; k++)
+          cloth.target[i * 3 + k] = posed.getComponent(k);
+      }
+      cloth.positions.set(cloth.target);
+      cloth.previous.set(cloth.target);
+      cloth.anchors.set(cloth.target);
+    }
     let geo: T.BufferGeometry;
     if (topology) {
       geo = new T.BufferGeometry();
-      geo.setAttribute("position", new T.Float32BufferAttribute(pts, 3));
+      geo.setAttribute(
+        "position",
+        new T.Float32BufferAttribute(cloth.positions, 3),
+      );
       geo.setAttribute("uv", new T.Float32BufferAttribute(topology.uv, 2));
       geo.setIndex(topology.indices);
       geo.computeVertexNormals();
@@ -367,9 +417,15 @@ export function createMannequin(m: Measurements, d: Design) {
       neckWidth = d.neckline === "scoop" ? 0.096 : 0.072;
     const flare =
       d.silhouette === "flared" ? 1.45 : d.silhouette === "tapered" ? 0.9 : 1;
-    const hipY = anchor - 0.44,
-      waistY = anchor - 0.32,
-      chestY = anchor - 0.16;
+    const hipY =
+        anchor -
+        (d.tracedShape ? (d.tracedShape.hipAt * g.length) / 100 : 0.44),
+      waistY =
+        anchor -
+        (d.tracedShape ? (d.tracedShape.waistAt * g.length) / 100 : 0.32),
+      chestY =
+        anchor -
+        (d.tracedShape ? (d.tracedShape.chestAt * g.length) / 100 : 0.16);
     const upper: Ring[] = [
       { y: hipY, a: gHip, b: gHip * 0.72 },
       { y: waistY, a: gWaist, b: gWaist * 0.72 },
@@ -379,7 +435,16 @@ export function createMannequin(m: Measurements, d: Design) {
       { y: anchor + 0.043, a: neckWidth, b: neckWidth * 0.88 },
     ];
     const torsoRings = [
-      { y: hem, a: gHip * flare, b: gHip * 0.72 * flare },
+      {
+        y: hem,
+        a: d.tracedShape
+          ? radiusForCircumference(d.tracedShape.hemCircumference)
+          : gHip * flare,
+        b:
+          (d.tracedShape
+            ? radiusForCircumference(d.tracedShape.hemCircumference)
+            : gHip * flare) * 0.72,
+      },
       ...upper.filter((r) => r.y > hem),
     ];
     const points = ringPoints(
@@ -388,8 +453,13 @@ export function createMannequin(m: Measurements, d: Design) {
       64,
       d.silhouette === "flared" ? 0.006 : 0.001,
     );
-    const depth =
-      d.neckline === "v" ? 0.125 : d.neckline === "scoop" ? 0.085 : 0.02;
+    const depth = d.tracedShape
+      ? d.tracedShape.neckDepth / 100
+      : d.neckline === "v"
+        ? 0.125
+        : d.neckline === "scoop"
+          ? 0.085
+          : 0.02;
     for (let r = 0; r < 48; r++)
       for (let c = 0; c < 64; c++) {
         const i = (r * 64 + c) * 3,

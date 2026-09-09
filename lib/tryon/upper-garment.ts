@@ -50,6 +50,7 @@ export function connectedUpperGarment(
     hem = Array.from({ length: columns }, (_, c) => (rows - 1) * columns + c);
   loops.push(collar, hem);
   const pins = new Set(collar);
+  const sleeveVertices = new Map<number, number>();
   for (let sideIndex = 0; sideIndex < patches.length; sideIndex++) {
     const p = patches[sideIndex],
       side = sideIndex === 0 ? 1 : -1,
@@ -60,6 +61,7 @@ export function connectedUpperGarment(
       boundary.push(p.bottom * columns + c);
     for (let r = p.bottom; r > p.top; r--) boundary.push(r * columns + p.left);
     loops.push(boundary);
+    for (const v of boundary) sleeveVertices.set(v, side);
     for (let c = p.left; c <= p.right; c++) pins.add(p.top * columns + c);
     if (design.garment.sleeveLength === 0) continue;
     const n = boundary.length,
@@ -67,12 +69,12 @@ export function connectedUpperGarment(
     for (const v of boundary)
       for (let k = 0; k < 3; k++) center[k] += points[v * 3 + k] / n;
     const length = design.garment.sleeveLength / 100,
-      radius = Math.max(0.062, Math.min(0.13, chestRadius * 0.38)),
-      cuff = design.sleeveStyle === "bell" ? radius * 1.6 : radius * 0.78;
+      radius = Math.max(0.075, Math.min(0.13, chestRadius * 0.42)),
+      cuff = design.sleeveStyle === "bell" ? radius * 1.6 : radius * 0.9;
     let previous = boundary;
     for (let r = 1; r <= 20; r++) {
       const t = r / 20,
-        blend = t * t * (3 - 2 * t),
+        blend = Math.min(1, t * 5) ** 2 * (3 - 2 * Math.min(1, t * 5)),
         ring: number[] = [];
       for (let c = 0; c < n; c++) {
         const root = boundary[c] * 3,
@@ -80,23 +82,22 @@ export function connectedUpperGarment(
             points[root + 1] - center[1],
             points[root + 2] - center[2],
           );
-        const targetX = side * 0.957 * Math.sin(angle) * cuff,
-          targetY = 0.29 * Math.sin(angle) * cuff,
-          targetZ = Math.cos(angle) * cuff * 0.92;
-        ring.push(points.length / 3);
-        points.push(
-          center[0] +
-            side * 0.29 * length * t +
-            (points[root] - center[0]) * (1 - blend) +
-            targetX * blend,
-          center[1] -
-            0.957 * length * t +
-            (points[root + 1] - center[1]) * (1 - blend) +
-            targetY * blend,
-          center[2] +
-            (points[root + 2] - center[2]) * (1 - blend) +
-            targetZ * blend,
-        );
+        const radial = radius + (cuff - radius) * t;
+        const targetX = side * 0.929 * Math.sin(angle) * radial,
+          targetY = 0.37 * Math.sin(angle) * radial,
+          targetZ = Math.cos(angle) * radial;
+        const distance = 0.075 + Math.max(0.005, length - 0.075) * t;
+        const target = [
+          side * (design.garment.shoulders / 200 - 0.015 + 0.37 * distance) +
+            targetX,
+          anchor - 0.025 - 0.929 * distance + targetY,
+          targetZ,
+        ];
+        const id = points.length / 3;
+        ring.push(id);
+        sleeveVertices.set(id, side);
+        for (let k = 0; k < 3; k++)
+          points.push(points[root + k] * (1 - blend) + target[k] * blend);
         uv.push(c / (n - 1), 1 - t);
       }
       for (let c = 0; c < n; c++) {
@@ -125,6 +126,9 @@ export function connectedUpperGarment(
     compactUv.push(...uv.slice(i * 2, i * 2 + 2));
   }
   return {
+    sleeveVertices: [...sleeveVertices]
+      .map(([v, side]) => ({ vertex: map.get(v)!, side }))
+      .filter((v) => v.vertex !== undefined),
     points: compact,
     uv: compactUv,
     indices: indices.map((i) => map.get(i)!),

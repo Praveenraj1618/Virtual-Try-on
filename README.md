@@ -13,7 +13,8 @@ A working 3D fitting-studio prototype: enter body measurements, customise a garm
 - **Connected shoulders and collision-aware neckline:** upper garments use a single connected surface; sleeve roots share bodice vertices and neckline anchors are projected outside the collision envelope before rendering. Garment rest dimensions remain unchanged.
 - **Refined mannequin and detailing:** continuous limb surfaces, a tapered jaw, ears, and garment neckline/cuff/side-seam guides that follow the cloth.
 - **Basic cloth relaxation:** positional constraints, gravity, body collision and illustrative cotton/denim/silk presets.
-- **Design uploads:** repeat PNG/JPEG/WebP artwork across the garment, or keep a costume sketch alongside it as a reference.
+- **Design uploads:** repeat PNG/JPEG/WebP artwork, or mark a front-view design with eight landmarks to generate a symmetric 3D garment. Shoulder-to-hem length calibrates scale; the trace controls chest, waist, hips, hem, neckline depth and sleeve length.
+- **Articulated arms:** independent shoulder lift, forward/backward motion and elbow bend, with relaxed, arms-out and wave presets. Posed cloth targets and collision capsules follow the limbs.
 - **Private saved looks:** measurements, design choices and uploaded assets persist on the server and are scoped to the signed-in user.
 - **PNG preview export** from the current 3D view.
 - Responsive controls, keyboard-accessible dialogs, validation and recoverable save/upload errors.
@@ -30,7 +31,7 @@ This is a visual prototype, not a body-scanning or certified garment-fit system.
 - Positive measurement differences do not establish comfort, correct fit, or that a garment can be put on. Closures, stretch, unmeasured limb circumferences and construction affect real fit.
 - The cloth solver is a small position-based relaxation model with pinned vertices, structural/shear/bending constraints and approximate collision. It is not a calibrated textile solver. Overlaps, seam artefacts and unusual body/garment combinations can produce imperfect previews.
 - Fabric labels select illustrative stiffness and shading presets; they do not represent measured material properties.
-- A print upload changes the surface artwork. A sketch upload is a manual design reference; **no automatic sketch-to-pattern or image-to-3D conversion is implemented**.
+- A print upload changes the surface artwork. Design-to-3D is **guided landmark reconstruction**, not automatic AI conversion. The user marks a front-view outline and supplies a real length. It generates wearable geometry, with an estimated elliptical depth and mirrored back; no sewing patterns, hidden seams, asymmetric layers, ruffles or cut-outs are reconstructed.
 - Camera measurement, arbitrary sewing-pattern import, learned body reconstruction and physically validated fit prediction are future stages.
 - Garment settings support the provided templates; this is not a sewing-pattern editor. T-shirt and dress sleeves share mesh vertices with their armholes, preventing disconnected shoulder seams. This is procedural connected geometry, not sewing-pattern reconstruction. Seam lines are visual guides.
 - First-version saved looks are upgraded on read using their original saved measurements and settings. New looks store explicit garment dimensions. Existing database rows and migrations are not rewritten.
@@ -64,7 +65,9 @@ flowchart TD
     G --> J
 ```
 
-A sketch is displayed as reference rather than consumed by an AI inference pipeline. No external AI API key or GPU model download is required for this version.
+A sketch is consumed by the guided outline editor: confirmed landmarks become physical dimensions and a saved custom shape profile, which the mesh generator uses directly. This is a geometric workflow, not an AI inference pipeline. No external AI API key or GPU model download is required. Arm poses are temporary preview state; saved looks preserve the generated garment profile.
+
+The pose rig deforms the cloth initialization and relaxation targets, while constraint rest lengths remain fixed. Changing a pose restarts the short drape pass. This is not continuous, calibrated cloth simulation; extreme poses and tight sizes may still intersect. Sleeve initialization now centres cuffs around the neutral arm axes instead of extending them from the torso-side centre.
 
 ## Run locally
 

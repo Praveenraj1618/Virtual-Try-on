@@ -301,6 +301,7 @@ export function GarmentEditor({
         onClick={() =>
           onChange({
             ...design,
+            tracedShape: undefined,
             garment: { ...base },
             neckline: "crew",
             silhouette: design.kind === "dress" ? "flared" : "straight",

@@ -10,6 +10,7 @@ export class Cloth {
   pinned: Set<number>;
   count: number;
   anchors: Float32Array;
+  target: Float32Array;
   constructor(
     points: number[],
     public columns: number,
@@ -20,6 +21,7 @@ export class Cloth {
     this.positions = new Float32Array(points);
     this.previous = this.positions.slice();
     this.rest = this.positions.slice();
+    this.target = this.positions.slice();
     this.anchors = this.positions.slice();
     this.count = points.length / 3;
     this.pinned = new Set(Array.from({ length: columns }, (_, i) => i));
@@ -75,7 +77,7 @@ export class Cloth {
   fitAnchors(collide: (p: Vec3) => Vec3) {
     for (const vertex of this.pinned) {
       const i = vertex * 3;
-      let p: Vec3 = [this.rest[i], this.rest[i + 1], this.rest[i + 2]];
+      let p: Vec3 = [this.target[i], this.target[i + 1], this.target[i + 2]];
       for (let pass = 0; pass < 4; pass++) p = collide(p);
       for (let k = 0; k < 3; k++) {
         this.anchors[i + k] = p[k];
@@ -121,7 +123,7 @@ export class Cloth {
         const i = a * 3;
         // Gentle attachment to the tailored rest shape keeps this preview stable.
         for (let k = 0; k < 3; k++)
-          p[i + k] += (this.rest[i + k] - p[i + k]) * 0.004;
+          p[i + k] += (this.target[i + k] - p[i + k]) * 0.004;
         const v = collide([p[i], p[i + 1], p[i + 2]]);
         p[i] = v[0];
         p[i + 1] = Math.max(0.035, v[1]);

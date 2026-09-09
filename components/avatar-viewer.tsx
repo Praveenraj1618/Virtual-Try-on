@@ -4,7 +4,9 @@ import * as T from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { createMannequin } from "@/lib/tryon/model";
 import type { Measurements, Design } from "@/lib/tryon/schema";
+import type { Pose } from "@/lib/tryon/pose";
 type Props = {
+  pose: Pose;
   measurements: Measurements;
   design: Design;
   view: string;
@@ -14,6 +16,7 @@ type Props = {
 };
 export default function AvatarViewer({
   measurements,
+  pose,
   design,
   view,
   turn,
@@ -147,7 +150,7 @@ export default function AvatarViewer({
     const rt = runtime.current;
     if (!rt || !ready) return;
     setError("");
-    const model = createMannequin(measurements, design);
+    const model = createMannequin(measurements, design, pose);
     rt.scene.add(model.group);
     let stopped = false,
       frame = 0,
@@ -216,7 +219,7 @@ export default function AvatarViewer({
       });
       materials.forEach((m) => m.dispose());
     };
-  }, [measurements, design, ready, drape]);
+  }, [measurements, design, pose, ready, drape]);
   useEffect(() => {
     const rt = runtime.current;
     if (!rt) return;

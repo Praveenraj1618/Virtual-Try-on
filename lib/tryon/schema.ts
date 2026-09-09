@@ -152,6 +152,19 @@ export const designSchema = z.object({
     z.string().regex(/^\/api\/assets\/[0-9a-f-]{36}$/),
   ]),
   garment: garmentMeasurementsSchema.default(templateDimensions.tshirt),
+  tracedShape: z
+    .object({
+      chestAt: z.number().min(0.03).max(0.5),
+      waistAt: z.number().min(0.08).max(0.85),
+      hipAt: z.number().min(0.15).max(0.98),
+      hemCircumference: z.number().min(60).max(250),
+      neckDepth: z.number().min(0).max(25),
+    })
+    .refine(
+      (s) => s.chestAt < s.waistAt && s.waistAt < s.hipAt,
+      "Outline levels must be ordered",
+    )
+    .optional(),
   neckline: z.enum(["crew", "scoop", "v"]).default("crew"),
   silhouette: z.enum(["straight", "tapered", "flared"]).default("straight"),
   sleeveStyle: z.enum(["straight", "bell"]).default("straight"),

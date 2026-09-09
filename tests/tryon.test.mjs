@@ -352,3 +352,119 @@ test("neckline anchors clear the collision surface without changing rest dimensi
     dispose(model);
   }
 });
+
+test("sleeve cuffs surround the upper arms before and after relaxation", () => {
+  const model = createMannequin(defaults, defaultDesign);
+  const part = model.parts[0];
+  for (const steps of [0, 55]) {
+    for (let n = 0; n < steps; n++) part.cloth.step(model.collide);
+    for (const [trimIndex, side] of [
+      [3, 1],
+      [5, -1],
+    ]) {
+      const vertices = part.trims[trimIndex].vertices;
+      const centre = [0, 0, 0];
+      for (const v of vertices)
+        for (let k = 0; k < 3; k++)
+          centre[k] += part.cloth.positions[v * 3 + k] / vertices.length;
+      const sy = model.dim.shoulder - 0.025;
+      const along = (sy - centre[1]) / Math.sqrt(1 - 0.37 ** 2);
+      const armX = side * (model.dim.shoulderX - 0.015 + 0.37 * along);
+      assert.ok(
+        Math.abs(centre[0] - armX) < 0.045,
+        "cuff stays centred around arm, not beside it",
+      );
+      const zs = vertices.map((v) => part.cloth.positions[v * 3 + 2]);
+      assert.ok(
+        Math.min(...zs) < -0.025 && Math.max(...zs) > 0.025,
+        "cuff encloses front and back of arm",
+      );
+    }
+  }
+  dispose(model);
+});
+
+test("articulated arms preserve garment rest dimensions and keep cloth finite", () => {
+  const neutral = createMannequin(defaults, defaultDesign);
+  for (const pose of [
+    {
+      left: { raise: 68, forward: 0, bend: 0 },
+      right: { raise: 68, forward: 0, bend: 0 },
+    },
+    {
+      left: { raise: 0, forward: 80, bend: 110 },
+      right: { raise: 55, forward: 20, bend: 110 },
+    },
+    {
+      left: { raise: 110, forward: -40, bend: 135 },
+      right: { raise: -10, forward: 100, bend: 135 },
+    },
+  ]) {
+    const model = createMannequin(defaults, defaultDesign, pose);
+    const cloth = model.parts[0].cloth;
+    assert.deepEqual(cloth.rest, neutral.parts[0].cloth.rest);
+    assert.notDeepEqual(cloth.target, neutral.parts[0].cloth.target);
+    for (let n = 0; n < 35; n++) cloth.step(model.collide);
+    assert.ok(
+      [...cloth.positions].every((n) => Number.isFinite(n) && Math.abs(n) < 3),
+    );
+    for (const v of cloth.pinned) {
+      const p = Array.from(cloth.positions.slice(v * 3, v * 3 + 3));
+      const resolved = model.collide(p);
+      assert.ok(Math.hypot(...p.map((n, k) => n - resolved[k])) < 0.003);
+    }
+    dispose(model);
+  }
+  dispose(neutral);
+});
+
+const traceOutput = resolve("node_modules/.cache/tryon-test-trace.mjs");
+await build({
+  entryPoints: ["lib/tryon/design-trace.ts"],
+  outfile: traceOutput,
+  bundle: true,
+  platform: "node",
+  format: "esm",
+  packages: "external",
+});
+const { traceToDesign, initialTrace } = await import(
+  pathToFileURL(traceOutput)
+);
+test("image landmarks generate and persist real geometry, with validation", () => {
+  const design = traceToDesign(initialTrace, 0.8, 110, false, {
+    ...defaultDesign,
+    kind: "dress",
+  });
+  assert.ok(design.tracedShape);
+  assert.equal(design.texture, "");
+  assert.deepEqual(
+    lookSchema.parse({ name: "Traced", measurements: defaults, design }).design,
+    design,
+  );
+  const a = createMannequin(defaults, design);
+  const changed = initialTrace.map((p, i) =>
+    i === 5 ? { ...p, x: p.x + 8 } : p,
+  );
+  const b = createMannequin(
+    defaults,
+    traceToDesign(changed, 0.8, 110, false, {
+      ...defaultDesign,
+      kind: "dress",
+    }),
+  );
+  assert.notDeepEqual(a.parts[0].cloth.rest, b.parts[0].cloth.rest);
+  assert.throws(() =>
+    traceToDesign(initialTrace, NaN, 110, false, defaultDesign),
+  );
+  assert.throws(() =>
+    traceToDesign(
+      initialTrace.map((p, i) => (i === 3 ? { ...p, y: 95 } : p)),
+      0.8,
+      110,
+      false,
+      defaultDesign,
+    ),
+  );
+  dispose(a);
+  dispose(b);
+});
