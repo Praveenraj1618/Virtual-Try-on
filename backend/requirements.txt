@@ -1,0 +1,8 @@
+# API and CPU image processing. Install the CUDA wheel separately.
+fastapi==0.115.12
+uvicorn==0.34.2
+python-multipart==0.0.20
+pydantic==2.10.6
+pillow==11.2.1
+numpy==1.26.4
+opencv-python-headless==4.10.0.84

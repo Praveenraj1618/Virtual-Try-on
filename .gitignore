@@ -43,3 +43,13 @@ next-env.d.ts
 
 # generated TypeScript cache
 *.tsbuildinfo
+
+# Local AI source, model caches, private photos, outputs and Python environments.
+/backend/external/
+/backend/data/
+/backend/.venv/
+/.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+/densepose_/

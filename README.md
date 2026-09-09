@@ -1,5 +1,10 @@
 # FORM — Virtual Try-On
 
+**Person-based AI try-on, Phase 1:** a separate local FastAPI backend and CatVTON
+adapter are now included. Start with [the Windows setup and testing guide](backend/README.md).
+This phase is a backend/model baseline; the existing 3D interface below remains
+available. GPU inference and visual quality must be verified on the target laptop.
+
 A working 3D fitting-studio prototype: enter body measurements, customise a garment, apply an uploaded fabric print, and save the outfit. Built for exploring a personalised virtual fitting room and a future costume-design workflow.
 
 ## What works now

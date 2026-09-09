@@ -1,0 +1,20 @@
+-r requirements.txt
+# Compatible release family; do not install upstream's unpinned diffusers/main.
+# torch==2.4.0 and torchvision==0.19.0 are installed using the cu121 index.
+accelerate==0.31.0
+diffusers==0.31.0
+transformers==4.46.3
+huggingface-hub==0.25.2
+peft==0.13.2
+safetensors==0.4.5
+scipy==1.13.1
+scikit-image==0.24.0
+matplotlib==3.9.2
+PyYAML==6.0.2
+fvcore==0.1.5.post20221221
+cloudpickle==3.0.0
+omegaconf==2.3.0
+hydra-core==1.3.2
+pycocotools==2.0.8
+av==12.3.0
+tqdm==4.66.5
