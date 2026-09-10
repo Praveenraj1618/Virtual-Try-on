@@ -21,11 +21,12 @@ def source_revision(settings: Settings) -> str | None:
 
 def diagnose(settings: Settings) -> dict:
     report = {"python": platform.python_version(), "executable": sys.executable,
-              "platform": platform.platform(), "packages": {}, "cuda_available": False,
+              "platform": platform.platform(), "packages": {}, "cuda_available": None,
+              "torch_imported": False, "torch_cuda_runtime": None,
               "gpus": [], "problems": [], "model_source_revision": source_revision(settings),
               "expected_source_revision": CATVTON_REVISION,
               "inference_verified": False}
-    packages = {"torch": "2.4.0", "torchvision": "0.19.0", "diffusers": "0.31.0",
+    packages = {"torch": "2.4.1", "torchvision": "0.19.1", "diffusers": "0.31.0",
                 "transformers": "4.46.3", "accelerate": "0.31.0",
                 "huggingface-hub": "0.25.2", "peft": "0.13.2"}
     for name, expected in packages.items():
@@ -39,6 +40,7 @@ def diagnose(settings: Settings) -> dict:
             report["problems"].append(f"{name} is not installed in this Python environment.")
     try:
         import torch
+        report["torch_imported"] = True
         report["torch_cuda_runtime"] = torch.version.cuda
         report["cuda_available"] = torch.cuda.is_available()
         if report["cuda_available"]:
@@ -50,7 +52,8 @@ def diagnose(settings: Settings) -> dict:
         else:
             report["problems"].append("CUDA is unavailable. Check the NVIDIA driver and CUDA-enabled PyTorch wheel.")
     except Exception as error:
-        report["problems"].append(f"PyTorch could not load: {type(error).__name__}: {error}")
+        stage = "PyTorch CUDA check failed" if report["torch_imported"] else "PyTorch could not load"
+        report["problems"].append(f"{stage}: {type(error).__name__}: {error}")
     if report["model_source_revision"] != CATVTON_REVISION:
         report["problems"].append("Pinned CatVTON source is missing or different. Run python -m backend.scripts.setup_model.")
     try:

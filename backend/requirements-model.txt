@@ -1,6 +1,6 @@
 -r requirements.txt
 # Compatible release family; do not install upstream's unpinned diffusers/main.
-# torch==2.4.0 and torchvision==0.19.0 are installed using the cu121 index.
+# torch==2.4.1 and torchvision==0.19.1 are installed using the cu121 index.
 accelerate==0.31.0
 diffusers==0.31.0
 transformers==4.46.3

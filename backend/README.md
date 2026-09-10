@@ -51,7 +51,7 @@ or system-wide package installation are required.
 Install the matched CUDA wheels and the model dependencies:
 
 ```powershell
-python -m pip install torch==2.4.0 torchvision==0.19.0 --index-url https://download.pytorch.org/whl/cu121
+python -m pip install torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cu121
 python -m pip install -r backend/requirements-model.txt
 python -m pip check
 python -m backend.scripts.diagnose
@@ -67,6 +67,31 @@ At this point `cuda_available` should be `true`. Missing source and weights are
 expected until the next step. If CUDA is false or PyTorch cannot import, stop
 there and send the full diagnostic output. GPU capacity and installation have
 not been inferred from the model name alone.
+
+### Windows `fbgemm.dll` / WinError 126 during `import torch`
+
+PyTorch 2.4.0 has a documented Windows binary dependency regression, fixed in
+[2.4.1](https://github.com/pytorch/pytorch/issues/131662#issuecomment-2329870544).
+If you installed the earlier project pins, close running Python/backend processes
+and update the matched pair in the existing environment:
+
+```powershell
+conda activate vton
+python -m pip install --upgrade torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cu121
+python -m pip check
+python -c "import torch; print('Torch:', torch.__version__); print('CUDA:', torch.cuda.is_available()); print('GPU:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'unavailable')"
+python -m backend.scripts.diagnose --check-imports
+```
+
+An import failure does not establish whether CUDA or your GPU works. Diagnostics
+now report `torch_imported: false` and `cuda_available: null` when import fails;
+`false` is reserved for a completed CUDA availability check. Missing weights are
+expected until step 3. Do not download weights until imports and CUDA pass.
+The regression matches this error, but the error alone does not identify which
+DLL dependency is missing. If it persists with 2.4.1, share the new traceback;
+the next check is the official Microsoft x64 Visual C++ runtime installation.
+Do not copy DLLs from third-party download sites into Windows system folders.
+Windows inference still requires the real smoke test below.
 
 ## 2. Install pinned CatVTON source and check imports
 
