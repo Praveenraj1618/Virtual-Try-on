@@ -2,7 +2,8 @@
 
 This adds a separate FastAPI service and a real CatVTON adapter. The existing
 React/Three.js studio, Cloudflare storage and saved outfits are preserved.
-The React photo-try-on screen is **Phase 2**, so the existing page looks the same.
+The React photo-try-on screen is now available at `/try-on` (Phase 2).
+The existing 3D studio stays at `/`, with a link to photo try-on.
 
 **Implemented scope:** one person photo plus one shirt/T-shirt product image;
 EXIF correction; aspect-preserving preparation; garment transparency or plain
@@ -11,7 +12,7 @@ automatic clothing masking; protected face/hair regions; CatVTON inference;
 compositing into the original-resolution photo; diagnostic files and API downloads.
 
 **Not enabled yet:** bottoms, dresses, jackets, multi-piece outfits, sketch
-generation, a history browser, or production authentication. The category schema
+generation or production authentication. The category schema
 reserves those categories, but requests for them return an explicit error.
 This phase generates a still image in the original pose; it is not a 3D avatar,
 body-measurement estimator or fit guarantee.
@@ -225,7 +226,7 @@ Open <http://127.0.0.1:8000/docs>. Use `GET /health`, then `GET /diagnostics`.
 Expand `POST /v1/try-on`, select **Try it out**, choose the two files, leave
 `category=upper`, and execute. The response supplies result and comparison URLs.
 This request waits for generation; asynchronous progress and queue recovery are
-part of Phase 2.
+available through the Phase 2 `/v1/jobs` endpoint.
 
 PowerShell health check and an actual multipart request:
 
@@ -238,8 +239,7 @@ The `http://127.0.0.1:5173` React studio still runs separately. Nothing is being
 sent to your hosted site. This is a local single-user API, not a production
 multi-user authentication system. Keep it bound to loopback; do not expose it
 through a public tunnel. New AI results are filesystem run folders, not rows in
-the existing Cloudflare saved-look database. A SQLite history index and UI come
-in Phase 2. Deleting a run folder removes that local run and its images.
+the existing Cloudflare saved-look database. The Phase 2 UI lists these existing run folders; no database migration is needed. Deleting a run folder removes that local run and its images.
 
 ## Tests and errors
 
@@ -305,3 +305,60 @@ python -m backend.scripts.smoke_test --person "backend/data/input/person.jpg" --
 
 Compare the new run with the previous run's result and masks. No weights need
 redownloading, and previous run folders are retained.
+
+## Phase 2: browser photo try-on
+
+Start two PowerShell terminals from `C:\Users\Praveen Raj\Virtual-Try-on`.
+First terminal:
+
+```powershell
+conda activate vton
+git pull origin main
+python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --workers 1
+```
+
+Second terminal:
+
+```powershell
+npm.cmd ci
+npm.cmd run db:local
+npm.cmd run dev -- --host 127.0.0.1 --port 5173 --strictPort
+```
+
+Open http://127.0.0.1:5173/try-on. No new Python or model dependencies are required
+for an existing Phase 1 installation. Restart the backend after pulling changes.
+
+### Acceptance test on Windows
+
+1. Confirm the connection badge. Existing completed smoke tests appear in history.
+2. Upload the same person and shirt photos used in the CLI test, select Preview,
+   and generate. The backend returns a job ID immediately; the UI polls its status.
+3. Refresh while running. The job ID is restored from browser storage; inference
+   continues. File input selections themselves are not persisted.
+4. Inspect the original/result comparison, toggle result-only, and download PNG.
+5. Select an older history card and verify its result opens. Load more if needed.
+6. Stop the backend and refresh: the UI should display reconnection instructions.
+7. Visit `/` and confirm the existing 3D studio remains usable.
+
+The UI shows indeterminate processing status, not a fabricated percentage.
+Only one background job is accepted at a time (409 for a second submission).
+`POST /v1/jobs`, `GET /v1/jobs/{id}`, and paginated `GET /v1/runs` are new;
+the synchronous `/v1/try-on` endpoint remains available. Do not run the CLI and
+browser generation concurrently. Use one backend worker without `--reload`.
+
+Job records are saved under `backend/data/jobs`; completed images and history
+remain under `backend/data/runs`. Interrupted jobs are marked failed on startup;
+they are not automatically repeated. If a submission connection times out, check
+history before resubmitting. Photos stay on this computer. This UI requires the
+local frontend and local backend; the hosted Cloudflare studio cannot provide GPU
+inference. History is file-based to reuse existing runs, not a new SQLite index.
+
+Verification: TypeScript and production build passed; backend CPU tests cover
+job exclusion, persistence, restart recovery, upload validation, polling, and
+history. These tests use synthetic services, not GPU inference. Browser layout
+and real GPU generation through the new UI require the acceptance test above.
+
+New frontend: `app/try-on/page.tsx`, `components/photo-try-on.tsx`,
+`components/photo-try-on.css`. Backend jobs: `backend/app/jobs.py`;
+API integration: `backend/app/main.py`. Regression tests:
+`backend/tests/test_jobs.py`, `backend/tests/test_jobs_api.py`.
