@@ -286,3 +286,22 @@ try-on. LoRA training is deferred until comparisons show a concrete need.
 Upstream source and checkpoints are downloaded separately, not redistributed in
 this repository. Their licenses continue to apply; this is not a cleared
 commercial inference stack.
+
+## Collar mask correction
+
+The upper-body mask now reopens LIP-labelled upper clothing in a bounded band
+below the detected LIP face, including when ATR face/neck protection or mask
+expansion previously excluded it. LIP face and ATR hair/accessory labels remain
+protected. This is a segmentation-based heuristic, not proof of an anatomical
+boundary; inspect neckline and skin preservation on each test image.
+`segmentation-atr.png` is now saved alongside the LIP segmentation for diagnosis.
+Three CPU regression tests cover collar conflicts, protected face/hair/neck,
+and missing face labels. GPU/visual improvement must be verified by rerunning:
+
+```powershell
+python -m unittest discover -s backend/tests -p test_masking.py -v
+python -m backend.scripts.smoke_test --person "backend/data/input/person.jpg" --garment "backend/data/input/shirt.jpg" --seed 42
+```
+
+Compare the new run with the previous run's result and masks. No weights need
+redownloading, and previous run folders are retained.

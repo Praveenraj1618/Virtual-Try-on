@@ -11,11 +11,12 @@ import sys
 import time
 
 import numpy as np
-from PIL import Image, ImageFilter
+from PIL import Image
 
 from ..config import CATVTON_REVISION, Settings
 from ..diagnostics import source_revision
 from ..errors import TryOnError
+from ..masking import upper_body_masks
 
 
 def import_upstream(settings: Settings):
@@ -78,15 +79,14 @@ class CatVTONAdapter:
             face = (lip == 13) | (atr == 11)
             if face.sum() < 16 or not np.any(dense):
                 raise TryOnError("person_not_detected", "Could not identify the face and body clearly. Use one front-facing person with their face visible and arms slightly apart.")
-            protect = np.isin(lip, [1, 2, 4, 13]) | np.isin(atr, [1, 2, 3, 11])
-            protected = Image.fromarray(protect.astype(np.uint8) * 255).filter(ImageFilter.MaxFilter(5))
-            edit = np.asarray(parsed["mask"].convert("L")) > 127
-            edit &= np.asarray(protected) == 0
+            mask, protected = upper_body_masks(lip, atr, parsed["mask"])
+            edit = np.asarray(mask) > 127
             if edit.mean() < .01 or edit.mean() > .80:
                 raise TryOnError("person_mask", "The clothing mask is unreliable. Try a clearer photo with the whole upper body visible.")
             mask = Image.fromarray(edit.astype(np.uint8) * 255)
             diagnostics = {"densepose": parsed["densepose"].copy(),
-                           "segmentation": parsed["schp_lip"].copy()}
+                           "segmentation": parsed["schp_lip"].copy(),
+                           "segmentation-atr": parsed["schp_atr"].copy()}
             # Release all three parsing networks before loading the diffusion network.
             del parsed
             masker = None

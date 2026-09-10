@@ -14,7 +14,7 @@ from .schemas import Category, TryOnOptions
 
 ARTIFACTS = {"person.png", "garment.png", "garment-mask.png", "person-canvas.png",
              "garment-canvas.png", "edit-mask.png", "protected-mask.png", "densepose.png",
-             "segmentation.png", "generated.png", "result.png", "comparison.png", "alpha.png"}
+             "segmentation.png", "segmentation-atr.png", "generated.png", "result.png", "comparison.png", "alpha.png"}
 
 
 class TryOnService:
