@@ -38,3 +38,21 @@ class CollarMaskTests(unittest.TestCase):
         edit, protected = map(np.asarray, upper_body_masks(lip, atr, raw))
         self.assertFalse(np.any(edit))
         self.assertEqual(protected[33, 30], 255)
+
+    def test_detached_face_island_on_shirt_is_released(self):
+        lip, atr, raw = self.inputs()
+        atr[46:48, 30:32] = 11
+        lip[46:48, 30:32] = 0
+        edit, protected = map(np.asarray, upper_body_masks(lip, atr, raw))
+        self.assertEqual(edit[46, 30], 255)
+        self.assertEqual(protected[46, 30], 0)
+        self.assertTrue(np.all(protected[lip == 13] == 255))
+
+    def test_atr_clothing_fills_lip_hole_not_neck(self):
+        lip, atr, raw = self.inputs()
+        lip[33, 30] = 0
+        atr[33, 30] = 4
+        lip[34, 31] = 0
+        edit, protected = map(np.asarray, upper_body_masks(lip, atr, raw))
+        self.assertEqual(edit[33, 30], 255)
+        self.assertEqual(edit[34, 31], 0)
